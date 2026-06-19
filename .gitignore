@@ -1,7 +1,7 @@
 # Binaries
-zara-privacy-mcp
-zara-privacy-mcp-linux-amd64
-zara-privacy-mcp-darwin-arm64
+/zara-privacy-mcp
+/zara-privacy-mcp-linux-amd64
+/zara-privacy-mcp-darwin-arm64
 
 # Test/coverage
 coverage.out
