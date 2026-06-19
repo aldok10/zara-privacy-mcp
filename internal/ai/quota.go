@@ -13,9 +13,9 @@ type Quota struct {
 }
 
 type providerQuota struct {
-	Limit     int64     // max tokens per period (0 = unlimited)
-	Used      int64     // tokens used in current period
-	ResetAt   time.Time // when this period resets
+	Limit      int64         // max tokens per period (0 = unlimited)
+	Used       int64         // tokens used in current period
+	ResetAt    time.Time     // when this period resets
 	ResetEvery time.Duration // reset interval
 }
 
@@ -81,10 +81,7 @@ func (q *Quota) Status() map[string]QuotaStatus {
 
 	result := make(map[string]QuotaStatus)
 	for name, pq := range q.limits {
-		remaining := pq.Limit - pq.Used
-		if remaining < 0 {
-			remaining = 0
-		}
+		remaining := max(pq.Limit-pq.Used, 0)
 		result[name] = QuotaStatus{
 			Limit:     pq.Limit,
 			Used:      pq.Used,

@@ -208,10 +208,7 @@ func estimateTokens(s string) int {
 	charCount := len(s)
 
 	// Estimate: 1 token ≈ 4 chars
-	tokens := charCount / 4
-	if tokens < len(words) {
-		tokens = len(words)
-	}
+	tokens := max(charCount/4, len(words))
 	if tokens < 1 {
 		tokens = 1
 	}

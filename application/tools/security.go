@@ -54,14 +54,14 @@ func validateRedisCommand(command string) error {
 }
 
 // validateMongoFilter blocks dangerous MongoDB operators recursively.
-func validateMongoFilter(filter map[string]interface{}) error {
+func validateMongoFilter(filter map[string]any) error {
 	for key, val := range filter {
 		for _, op := range blockedMongoOperators {
 			if strings.EqualFold(key, op) {
 				return fmt.Errorf("MongoDB operator %q not allowed", key)
 			}
 		}
-		if sub, ok := val.(map[string]interface{}); ok {
+		if sub, ok := val.(map[string]any); ok {
 			if err := validateMongoFilter(sub); err != nil {
 				return err
 			}

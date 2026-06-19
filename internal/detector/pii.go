@@ -166,10 +166,7 @@ func (d *PIIDetector) ScanWithContext(text string, locales ...string) []Finding 
 // isFalsePositive checks if a finding is likely a false positive.
 func isFalsePositive(f Finding, text string) bool {
 	// Get context around the finding
-	start := f.Position - 20
-	if start < 0 {
-		start = 0
-	}
+	start := max(f.Position-20, 0)
 	end := f.Position + f.Length + 20
 	if end > len(text) {
 		end = len(text)

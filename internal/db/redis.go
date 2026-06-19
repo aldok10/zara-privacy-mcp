@@ -42,10 +42,10 @@ type RedisRegistry struct {
 
 // RedisResult holds the result of a Redis operation.
 type RedisResult struct {
-	Command   string        `json:"command"`
-	Result    interface{}   `json:"result"`
-	Duration  string        `json:"duration"`
-	Masked    []MaskedField `json:"masked,omitempty"`
+	Command  string        `json:"command"`
+	Result   any           `json:"result"`
+	Duration string        `json:"duration"`
+	Masked   []MaskedField `json:"masked,omitempty"`
 }
 
 // NewRedisRegistry creates an empty Redis registry.
@@ -134,11 +134,11 @@ func (r *RedisRegistry) CloseAll() {
 // ─── Commands ───────────────────────────────────────────────────────────────
 
 // Do executes an arbitrary Redis command and returns the result with masking.
-func (r *RedisDB) Do(command string, args ...interface{}) (*RedisResult, error) {
+func (r *RedisDB) Do(command string, args ...any) (*RedisResult, error) {
 	start := time.Now()
 
 	ctx := context.Background()
-	cmd := r.client.Do(ctx, append([]interface{}{command}, args...)...)
+	cmd := r.client.Do(ctx, append([]any{command}, args...)...)
 	if err := cmd.Err(); err != nil {
 		return nil, fmt.Errorf("redis %s: %w", command, err)
 	}
@@ -163,7 +163,7 @@ func (r *RedisDB) Keys(pattern string) ([]string, error) {
 // ─── Masking ────────────────────────────────────────────────────────────────
 
 // maskResult recursively scans redis values for secrets/PII.
-func (r *RedisDB) maskResult(val interface{}, command string) (interface{}, []MaskedField) {
+func (r *RedisDB) maskResult(val any, command string) (any, []MaskedField) {
 	switch v := val.(type) {
 	case string:
 		masked, findings := r.masker.MaskString(v)
@@ -181,9 +181,9 @@ func (r *RedisDB) maskResult(val interface{}, command string) (interface{}, []Ma
 		}
 		return masked, fields
 
-	case []interface{}:
+	case []any:
 		var allMasked []MaskedField
-		result := make([]interface{}, len(v))
+		result := make([]any, len(v))
 		for i, item := range v {
 			maskedItem, m := r.maskResult(item, command)
 			result[i] = maskedItem
@@ -191,9 +191,9 @@ func (r *RedisDB) maskResult(val interface{}, command string) (interface{}, []Ma
 		}
 		return result, allMasked
 
-	case map[interface{}]interface{}:
+	case map[any]any:
 		var allMasked []MaskedField
-		result := make(map[string]interface{})
+		result := make(map[string]any)
 		for k, item := range v {
 			keyStr := fmt.Sprintf("%v", k)
 			maskedItem, m := r.maskResult(item, command+"."+keyStr)

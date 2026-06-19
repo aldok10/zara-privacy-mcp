@@ -22,19 +22,19 @@ import (
 
 // Handlers holds all MCP tool handler methods.
 type Handlers struct {
-	Engine        *engine.RedactEngine
-	Compressor    *compress.Compressor
-	Classifier    *classify.Classifier
-	Store         *store.MappingStore
-	DBRegistry    *db.Registry
-	MongoRegistry *db.MongoRegistry
-	RedisRegistry *db.RedisRegistry
-	APIRegistry   *httpproxy.Registry
-	AIRegistry    *ai.Registry
-	AIRouter      *ai.Router // optional: fallback routing
-	AppConfig     *config.Config
+	Engine         *engine.RedactEngine
+	Compressor     *compress.Compressor
+	Classifier     *classify.Classifier
+	Store          *store.MappingStore
+	DBRegistry     *db.Registry
+	MongoRegistry  *db.MongoRegistry
+	RedisRegistry  *db.RedisRegistry
+	APIRegistry    *httpproxy.Registry
+	AIRegistry     *ai.Registry
+	AIRouter       *ai.Router // optional: fallback routing
+	AppConfig      *config.Config
 	DefaultLocales []string
-	MaxTextSize   int
+	MaxTextSize    int
 }
 
 const maxTextSize = 1024 * 1024 // 1MB
@@ -90,7 +90,7 @@ func (h *Handlers) CompressContext(ctx context.Context, req mcp.CallToolRequest)
 	before := estimateTokens(text)
 	after := estimateTokens(compressed)
 
-	return jsonResult(map[string]interface{}{
+	return jsonResult(map[string]any{
 		"compressed":   compressed,
 		"tokens_saved": before - after,
 	})
@@ -106,7 +106,7 @@ func (h *Handlers) MemoryFilter(ctx context.Context, req mcp.CallToolRequest) (*
 
 	// Guard: if risk is below threshold, allow immediately
 	if scanResult.RiskScore < detector.RiskHigh {
-		return jsonResult(map[string]interface{}{
+		return jsonResult(map[string]any{
 			"allowed": true,
 			"reason":  "",
 			"blocked": []string{},
@@ -121,7 +121,7 @@ func (h *Handlers) MemoryFilter(ctx context.Context, req mcp.CallToolRequest) (*
 		}
 	}
 
-	return jsonResult(map[string]interface{}{
+	return jsonResult(map[string]any{
 		"allowed": false,
 		"reason":  "Contains high-risk sensitive data",
 		"blocked": blocked,
@@ -166,9 +166,9 @@ func (h *Handlers) DBQuery(ctx context.Context, req mcp.CallToolRequest) (*mcp.C
 		return mcp.NewToolResultError("unknown database: " + dbName), nil
 	}
 
-	var params []interface{}
+	var params []any
 	if args := req.GetArguments(); args["params"] != nil {
-		if p, ok := args["params"].([]interface{}); ok {
+		if p, ok := args["params"].([]any); ok {
 			params = p
 		}
 	}
@@ -203,7 +203,7 @@ func (h *Handlers) DBListTables(ctx context.Context, req mcp.CallToolRequest) (*
 		return mcp.NewToolResultError("failed to list tables"), nil
 	}
 
-	return jsonResult(map[string]interface{}{
+	return jsonResult(map[string]any{
 		"database": dbName,
 		"tables":   tables,
 		"count":    len(tables),
@@ -230,7 +230,7 @@ func (h *Handlers) DBDescribe(ctx context.Context, req mcp.CallToolRequest) (*mc
 		return mcp.NewToolResultError("failed to describe table"), nil
 	}
 
-	return jsonResult(map[string]interface{}{
+	return jsonResult(map[string]any{
 		"database": dbName,
 		"table":    table,
 		"columns":  columns,
@@ -256,8 +256,8 @@ func (h *Handlers) MongoFind(ctx context.Context, req mcp.CallToolRequest) (*mcp
 	}
 
 	args := req.GetArguments()
-	filter := make(map[string]interface{})
-	if f, ok := args["filter"].(map[string]interface{}); ok {
+	filter := make(map[string]any)
+	if f, ok := args["filter"].(map[string]any); ok {
 		filter = f
 	}
 
@@ -295,7 +295,7 @@ func (h *Handlers) MongoListCollections(ctx context.Context, req mcp.CallToolReq
 		return mcp.NewToolResultError("failed to list collections"), nil
 	}
 
-	return jsonResult(map[string]interface{}{
+	return jsonResult(map[string]any{
 		"database":    dbName,
 		"collections": cols,
 		"count":       len(cols),
@@ -324,9 +324,9 @@ func (h *Handlers) RedisExec(ctx context.Context, req mcp.CallToolRequest) (*mcp
 		return mcp.NewToolResultError("unknown Redis: " + dbName), nil
 	}
 
-	var args []interface{}
+	var args []any
 	if a := req.GetArguments()["args"]; a != nil {
-		if arr, ok := a.([]interface{}); ok {
+		if arr, ok := a.([]any); ok {
 			args = arr
 		}
 	}
@@ -360,7 +360,7 @@ func (h *Handlers) RedisKeys(ctx context.Context, req mcp.CallToolRequest) (*mcp
 		return mcp.NewToolResultError("failed to list keys"), nil
 	}
 
-	return jsonResult(map[string]interface{}{
+	return jsonResult(map[string]any{
 		"database": dbName,
 		"pattern":  pattern,
 		"keys":     keys,
@@ -391,7 +391,7 @@ func (h *Handlers) HTTPRequest(ctx context.Context, req mcp.CallToolRequest) (*m
 	}
 
 	var headers map[string]string
-	if h2, ok := args["headers"].(map[string]interface{}); ok {
+	if h2, ok := args["headers"].(map[string]any); ok {
 		headers = make(map[string]string)
 		for k, v := range h2 {
 			headers[k] = fmt.Sprintf("%v", v)
@@ -421,7 +421,7 @@ func (h *Handlers) HTTPRequest(ctx context.Context, req mcp.CallToolRequest) (*m
 
 func (h *Handlers) HTTPListAPIs(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	apis := h.APIRegistry.List()
-	return jsonResult(map[string]interface{}{
+	return jsonResult(map[string]any{
 		"apis":  apis,
 		"count": len(apis),
 	})
@@ -475,10 +475,10 @@ func (h *Handlers) AIChat(ctx context.Context, req mcp.CallToolRequest) (*mcp.Ca
 
 func (h *Handlers) AIListProviders(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	providers := h.AIRegistry.List()
-	details := make([]map[string]interface{}, 0)
+	details := make([]map[string]any, 0)
 	for _, name := range providers {
 		p, _ := h.AIRegistry.Get(name)
-		details = append(details, map[string]interface{}{
+		details = append(details, map[string]any{
 			"name":       name,
 			"base_url":   p.BaseURL,
 			"configured": p.APIKey != "",
@@ -486,7 +486,7 @@ func (h *Handlers) AIListProviders(ctx context.Context, req mcp.CallToolRequest)
 		})
 	}
 
-	return jsonResult(map[string]interface{}{
+	return jsonResult(map[string]any{
 		"providers": details,
 		"count":     len(details),
 	})
@@ -494,9 +494,9 @@ func (h *Handlers) AIListProviders(ctx context.Context, req mcp.CallToolRequest)
 
 func (h *Handlers) AIQuotaStatus(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	if h.AIRouter == nil {
-		return jsonResult(map[string]interface{}{"quota": map[string]interface{}{}, "usage": []interface{}{}})
+		return jsonResult(map[string]any{"quota": map[string]any{}, "usage": []any{}})
 	}
-	return jsonResult(map[string]interface{}{
+	return jsonResult(map[string]any{
 		"quota": h.AIRouter.Quota().Status(),
 		"usage": h.AIRouter.Stats(),
 	})
@@ -505,27 +505,27 @@ func (h *Handlers) AIQuotaStatus(ctx context.Context, req mcp.CallToolRequest) (
 // ─── Config Tools ───────────────────────────────────────────────────────────
 
 func (h *Handlers) ConfigList(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	databases := make([]map[string]interface{}, 0)
+	databases := make([]map[string]any, 0)
 	for _, dbc := range h.AppConfig.Databases {
-		databases = append(databases, map[string]interface{}{
+		databases = append(databases, map[string]any{
 			"name":   dbc.Name,
 			"driver": dbc.Driver,
 			"status": "connected",
 		})
 	}
 
-	apis := make([]map[string]interface{}, 0)
+	apis := make([]map[string]any, 0)
 	for _, apic := range h.AppConfig.APIs {
-		apis = append(apis, map[string]interface{}{
+		apis = append(apis, map[string]any{
 			"name":     apic.Name,
 			"base_url": apic.BaseURL,
 			"auth":     apic.AuthType,
 		})
 	}
 
-	aiProvs := make([]map[string]interface{}, 0)
+	aiProvs := make([]map[string]any, 0)
 	for _, aic := range h.AppConfig.AIProviders {
-		aiProvs = append(aiProvs, map[string]interface{}{
+		aiProvs = append(aiProvs, map[string]any{
 			"name":       aic.Name,
 			"base_url":   aic.BaseURL,
 			"configured": aic.APIKey != "",
@@ -533,7 +533,7 @@ func (h *Handlers) ConfigList(ctx context.Context, req mcp.CallToolRequest) (*mc
 		})
 	}
 
-	return jsonResult(map[string]interface{}{
+	return jsonResult(map[string]any{
 		"databases":    databases,
 		"apis":         apis,
 		"ai_providers": aiProvs,
@@ -541,7 +541,7 @@ func (h *Handlers) ConfigList(ctx context.Context, req mcp.CallToolRequest) (*mc
 }
 
 func (h *Handlers) Version(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	return jsonResult(map[string]interface{}{
+	return jsonResult(map[string]any{
 		"version": version.Version,
 		"commit":  version.Commit,
 		"date":    version.Date,
@@ -550,7 +550,7 @@ func (h *Handlers) Version(ctx context.Context, req mcp.CallToolRequest) (*mcp.C
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-func jsonResult(v interface{}) (*mcp.CallToolResult, error) {
+func jsonResult(v any) (*mcp.CallToolResult, error) {
 	b, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return mcp.NewToolResultError("failed to serialize result"), nil
@@ -568,7 +568,7 @@ func (h *Handlers) getLocales(req mcp.CallToolRequest) []string {
 
 func getStringSlice(req mcp.CallToolRequest, key string) []string {
 	args := req.GetArguments()
-	if arr, ok := args[key].([]interface{}); ok {
+	if arr, ok := args[key].([]any); ok {
 		var result []string
 		for _, v := range arr {
 			if s, ok := v.(string); ok {

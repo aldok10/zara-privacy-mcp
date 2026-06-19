@@ -54,7 +54,7 @@ func ExtractContent(format Format, body []byte) (string, int) {
 // ─── OpenAI format ──────────────────────────────────────────────────────────
 
 func toOpenAI(model string, messages []ChatMessage) ([]byte, error) {
-	req := map[string]interface{}{
+	req := map[string]any{
 		"model":    model,
 		"messages": messages,
 	}
@@ -92,7 +92,7 @@ func toAnthropic(model string, messages []ChatMessage) ([]byte, error) {
 		}
 	}
 
-	req := map[string]interface{}{
+	req := map[string]any{
 		"model":      model,
 		"max_tokens": 8192,
 		"messages":   filtered,
@@ -122,7 +122,7 @@ func fromAnthropic(body []byte) (string, int) {
 // ─── Gemini format ──────────────────────────────────────────────────────────
 
 func toGemini(model string, messages []ChatMessage) ([]byte, error) {
-	var contents []map[string]interface{}
+	var contents []map[string]any
 	for _, m := range messages {
 		role := m.Role
 		if role == "assistant" {
@@ -131,12 +131,12 @@ func toGemini(model string, messages []ChatMessage) ([]byte, error) {
 		if role == "system" {
 			role = "user" // Gemini doesn't have system, prepend as user
 		}
-		contents = append(contents, map[string]interface{}{
+		contents = append(contents, map[string]any{
 			"role":  role,
 			"parts": []map[string]string{{"text": m.Content}},
 		})
 	}
-	req := map[string]interface{}{
+	req := map[string]any{
 		"contents": contents,
 	}
 	return json.Marshal(req)

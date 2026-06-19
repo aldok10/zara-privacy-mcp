@@ -40,11 +40,11 @@ type MongoRegistry struct {
 
 // MongoResult holds the result of a MongoDB operation.
 type MongoResult struct {
-	Documents  []map[string]interface{} `json:"documents,omitempty"`
-	Count      int                      `json:"count,omitempty"`
-	Duration   string                   `json:"duration"`
-	Collection string                   `json:"collection,omitempty"`
-	Masked     []MaskedField            `json:"masked,omitempty"`
+	Documents  []map[string]any `json:"documents,omitempty"`
+	Count      int              `json:"count,omitempty"`
+	Duration   string           `json:"duration"`
+	Collection string           `json:"collection,omitempty"`
+	Masked     []MaskedField    `json:"masked,omitempty"`
 }
 
 // NewMongoRegistry creates an empty MongoDB registry.
@@ -144,7 +144,7 @@ func (m *MongoDB) Find(collection string, filter bson.M, limit int64) (*MongoRes
 	}
 	defer cur.Close(ctx)
 
-	var docs []map[string]interface{}
+	var docs []map[string]any
 	var masked []MaskedField
 	rowIdx := 0
 
@@ -154,14 +154,14 @@ func (m *MongoDB) Find(collection string, filter bson.M, limit int64) (*MongoRes
 			continue
 		}
 
-		flat := make(map[string]interface{})
+		flat := make(map[string]any)
 		m.flattenDoc("", doc, flat, &masked, rowIdx)
 		docs = append(docs, flat)
 		rowIdx++
 	}
 
 	if docs == nil {
-		docs = []map[string]interface{}{}
+		docs = []map[string]any{}
 	}
 
 	return &MongoResult{
@@ -185,12 +185,12 @@ func (m *MongoDB) RunCommand(command bson.M) (*MongoResult, error) {
 		return nil, fmt.Errorf("mongo command: %w", err)
 	}
 
-	flat := make(map[string]interface{})
+	flat := make(map[string]any)
 	var masked []MaskedField
 	m.flattenDoc("", doc, flat, &masked, 0)
 
 	return &MongoResult{
-		Documents: []map[string]interface{}{flat},
+		Documents: []map[string]any{flat},
 		Count:     1,
 		Duration:  time.Since(start).Round(time.Microsecond).String(),
 		Masked:    masked,
@@ -213,7 +213,7 @@ func (m *MongoDB) ListCollections() ([]string, error) {
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 // flattenDoc flattens a BSON document into a flat map, masking sensitive values.
-func (m *MongoDB) flattenDoc(prefix string, doc bson.M, out map[string]interface{}, masked *[]MaskedField, rowIdx int) {
+func (m *MongoDB) flattenDoc(prefix string, doc bson.M, out map[string]any, masked *[]MaskedField, rowIdx int) {
 	for key, val := range doc {
 		fullKey := key
 		if prefix != "" {
@@ -223,7 +223,7 @@ func (m *MongoDB) flattenDoc(prefix string, doc bson.M, out map[string]interface
 		switch v := val.(type) {
 		case bson.M:
 			m.flattenDoc(fullKey, v, out, masked, rowIdx)
-		case []interface{}:
+		case []any:
 			out[fullKey] = fmt.Sprintf("%v", v)
 		case string:
 			if v != "" {
@@ -240,7 +240,7 @@ func (m *MongoDB) flattenDoc(prefix string, doc bson.M, out map[string]interface
 }
 
 // maskValue checks a string value for secrets/PII and masks if found.
-func (m *MongoDB) maskValue(val, field string, rowIdx int) (interface{}, []MaskedField) {
+func (m *MongoDB) maskValue(val, field string, rowIdx int) (any, []MaskedField) {
 	masked, findings := m.masker.MaskString(val)
 	if len(findings) == 0 {
 		return val, nil

@@ -106,7 +106,7 @@ func (c *Compressor) ExtractRelevant(text string, keywords []string, contextLine
 	}
 
 	var result []string
-	for i := 0; i < len(lines); i++ {
+	for i := range lines {
 		if relevant[i] {
 			result = append(result, lines[i])
 		}
@@ -125,20 +125,6 @@ func (c *Compressor) Compress(text string, keywords []string) string {
 	}
 
 	return result
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 // TFIDFExtractor scores lines by TF-IDF against a corpus.

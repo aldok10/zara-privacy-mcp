@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"maps"
 	"strings"
 	"sync"
 	"time"
@@ -188,9 +189,7 @@ func (s *MappingStore) RestoreFromSnapshot(encrypted string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	for k, v := range mappings {
-		s.inMemory[k] = v
-	}
+	maps.Copy(s.inMemory, mappings)
 
 	return nil
 }

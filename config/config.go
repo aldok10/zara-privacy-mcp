@@ -331,7 +331,7 @@ func (c *Config) parseAIProviders() {
 
 		// Support comma-separated env var names for multi-key pools
 		var apiKeys []string
-		for _, envName := range strings.Split(apiKeyEnv, ",") {
+		for envName := range strings.SplitSeq(apiKeyEnv, ",") {
 			envName = strings.TrimSpace(envName)
 			if envName == "" {
 				continue
@@ -349,7 +349,7 @@ func (c *Config) parseAIProviders() {
 		modelsStr := getEnv(prefix+name+"_MODELS", "")
 		var models []string
 		if modelsStr != "" {
-			for _, m := range strings.Split(modelsStr, ",") {
+			for m := range strings.SplitSeq(modelsStr, ",") {
 				m = strings.TrimSpace(m)
 				if m != "" {
 					models = append(models, m)
