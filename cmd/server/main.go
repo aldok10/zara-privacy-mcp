@@ -93,6 +93,13 @@ func main() {
 
 	server := mcp.NewServer(mcpCfg, cfg, secretDetector, piiDetector, mappingStore)
 
+	// Hot-reload: SIGHUP reloads configuration
+	if cfg.ReloadSignal {
+		config.NewReloader(cfg, func(newCfg *config.Config) {
+			log.Println("[INFO] Config reloaded. New connections will use updated settings.")
+		})
+	}
+
 	// Transport decision
 	switch cfg.Transport {
 	case "stdio":

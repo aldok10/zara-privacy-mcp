@@ -37,10 +37,13 @@ type DB struct {
 
 // Config for a database connection.
 type Config struct {
-	Name     string
-	Driver   string // "postgres", "mysql", "sqlite", "sqlserver"
-	DSN      string
-	MaxConns int
+	Name            string
+	Driver          string // "postgres", "mysql", "sqlite", "sqlserver", "oracle", "clickhouse"
+	DSN             string
+	MaxConns        int           // max open connections (default: 10)
+	MaxIdleConns    int           // max idle connections (default: 5)
+	ConnMaxLifetime time.Duration // max connection lifetime (default: 30m)
+	ConnMaxIdleTime time.Duration // max idle time before close (default: 5m)
 }
 
 // DriverInfo holds metadata about a supported driver.
@@ -257,12 +260,31 @@ func (r *Registry) open(cfg Config) (*sql.DB, error) {
 		return nil, err
 	}
 
-	if cfg.MaxConns <= 0 {
-		cfg.MaxConns = 5
+	// Connection pool best-practice defaults
+	maxOpen := cfg.MaxConns
+	if maxOpen <= 0 {
+		maxOpen = 10
 	}
-	db.SetMaxOpenConns(cfg.MaxConns)
-	db.SetMaxIdleConns(cfg.MaxConns / 2)
-	db.SetConnMaxLifetime(5 * time.Minute)
+	maxIdle := cfg.MaxIdleConns
+	if maxIdle <= 0 {
+		maxIdle = maxOpen / 2
+		if maxIdle < 2 {
+			maxIdle = 2
+		}
+	}
+	connMaxLifetime := cfg.ConnMaxLifetime
+	if connMaxLifetime <= 0 {
+		connMaxLifetime = 30 * time.Minute
+	}
+	connMaxIdleTime := cfg.ConnMaxIdleTime
+	if connMaxIdleTime <= 0 {
+		connMaxIdleTime = 5 * time.Minute
+	}
+
+	db.SetMaxOpenConns(maxOpen)
+	db.SetMaxIdleConns(maxIdle)
+	db.SetConnMaxLifetime(connMaxLifetime)
+	db.SetConnMaxIdleTime(connMaxIdleTime)
 
 	if err := db.Ping(); err != nil {
 		db.Close()

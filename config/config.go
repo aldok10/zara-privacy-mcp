@@ -65,10 +65,13 @@ type Config struct {
 
 // DBConfig represents a database connection (SQL).
 type DBConfig struct {
-	Name     string
-	Driver   string // "postgres", "mysql", "sqlite", "sqlserver", "oracle", "clickhouse"
-	DSN      string
-	MaxConns int
+	Name            string
+	Driver          string // "postgres", "mysql", "sqlite", "sqlserver", "oracle", "clickhouse"
+	DSN             string
+	MaxConns        int // max open connections (0 = default 10)
+	MaxIdleConns    int // max idle connections (0 = default half of MaxConns)
+	ConnMaxLifetime int // seconds, max conn lifetime (0 = default 1800s/30m)
+	ConnMaxIdleTime int // seconds, max idle time (0 = default 300s/5m)
 }
 
 // MongoDBConfig represents a MongoDB connection.
@@ -80,10 +83,14 @@ type MongoDBConfig struct {
 
 // RedisDBConfig represents a Redis connection.
 type RedisDBConfig struct {
-	Name     string
-	Addr     string
-	Password string
-	DB       int
+	Name            string
+	Addr            string
+	Username        string
+	Password        string
+	DB              int
+	PoolSize        int // max pool connections (0 = default 10)
+	MinIdleConns    int // min idle connections (0 = default 2)
+	ConnMaxIdleTime int // seconds (0 = default 300s/5m)
 }
 
 // ─── HTTP API Config ────────────────────────────────────────────────────────
@@ -159,29 +166,34 @@ func Load() *Config {
 // ─── Database Config Parsing ────────────────────────────────────────────────
 //
 // Format:
-//   ZARA_DB_<NAME>_DRIVER=postgres|mysql|sqlite
+//   ZARA_DB_<NAME>_DRIVER=postgres|mysql|sqlite|sqlserver|oracle|clickhouse
 //   ZARA_DB_<NAME>_DSN=postgres://user:pass@host:5432/db
-//   ZARA_DB_<NAME>_MAX_CONNS=10 (optional, default 5)
+//   ZARA_DB_<NAME>_MAX_CONNS=10 (optional, default 10)
+//   ZARA_DB_<NAME>_MAX_IDLE_CONNS=5 (optional, default half of MAX_CONNS)
+//   ZARA_DB_<NAME>_CONN_MAX_LIFETIME=1800 (optional, seconds, default 30m)
+//   ZARA_DB_<NAME>_CONN_MAX_IDLE_TIME=300 (optional, seconds, default 5m)
 
 func (c *Config) parseDatabases() {
 	prefix := "ZARA_DB_"
-	suffixes := []string{"_DRIVER", "_DSN", "_MAX_CONNS"}
+	suffixes := []string{"_DRIVER", "_DSN", "_MAX_CONNS", "_MAX_IDLE_CONNS", "_CONN_MAX_LIFETIME", "_CONN_MAX_IDLE_TIME"}
 
 	names := c.collectNames(prefix, suffixes)
 	for _, name := range names {
 		driver := getEnv(prefix+name+"_DRIVER", "postgres")
 		dsn := getEnv(prefix+name+"_DSN", "")
-		maxConns := getEnvInt(prefix+name+"_MAX_CONNS", 5)
 
 		if dsn == "" {
 			continue
 		}
 
 		c.Databases[name] = DBConfig{
-			Name:     name,
-			Driver:   driver,
-			DSN:      dsn,
-			MaxConns: maxConns,
+			Name:            name,
+			Driver:          driver,
+			DSN:             dsn,
+			MaxConns:        getEnvInt(prefix+name+"_MAX_CONNS", 0),
+			MaxIdleConns:    getEnvInt(prefix+name+"_MAX_IDLE_CONNS", 0),
+			ConnMaxLifetime: getEnvInt(prefix+name+"_CONN_MAX_LIFETIME", 0),
+			ConnMaxIdleTime: getEnvInt(prefix+name+"_CONN_MAX_IDLE_TIME", 0),
 		}
 	}
 }
@@ -217,12 +229,16 @@ func (c *Config) parseMongoDBs() {
 //
 // Format:
 //   ZARA_REDIS_<NAME>_ADDR=localhost:6379
+//   ZARA_REDIS_<NAME>_USERNAME=optional
 //   ZARA_REDIS_<NAME>_PASSWORD=optional
 //   ZARA_REDIS_<NAME>_DB=0 (optional, default 0)
+//   ZARA_REDIS_<NAME>_POOL_SIZE=10 (optional, default 10)
+//   ZARA_REDIS_<NAME>_MIN_IDLE_CONNS=2 (optional, default 2)
+//   ZARA_REDIS_<NAME>_CONN_MAX_IDLE_TIME=300 (optional, seconds, default 5m)
 
 func (c *Config) parseRedisDBs() {
 	prefix := "ZARA_REDIS_"
-	suffixes := []string{"_ADDR", "_PASSWORD", "_DB"}
+	suffixes := []string{"_ADDR", "_USERNAME", "_PASSWORD", "_DB", "_POOL_SIZE", "_MIN_IDLE_CONNS", "_CONN_MAX_IDLE_TIME"}
 
 	names := c.collectNames(prefix, suffixes)
 	for _, name := range names {
@@ -232,10 +248,14 @@ func (c *Config) parseRedisDBs() {
 		}
 
 		c.RedisDBs[name] = RedisDBConfig{
-			Name:     name,
-			Addr:     addr,
-			Password: getEnv(prefix+name+"_PASSWORD", ""),
-			DB:       getEnvInt(prefix+name+"_DB", 0),
+			Name:            name,
+			Addr:            addr,
+			Username:        getEnv(prefix+name+"_USERNAME", ""),
+			Password:        getEnv(prefix+name+"_PASSWORD", ""),
+			DB:              getEnvInt(prefix+name+"_DB", 0),
+			PoolSize:        getEnvInt(prefix+name+"_POOL_SIZE", 0),
+			MinIdleConns:    getEnvInt(prefix+name+"_MIN_IDLE_CONNS", 0),
+			ConnMaxIdleTime: getEnvInt(prefix+name+"_CONN_MAX_IDLE_TIME", 0),
 		}
 	}
 }

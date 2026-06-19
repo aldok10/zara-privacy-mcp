@@ -113,10 +113,13 @@ func NewServer(cfg *Config, appCfg *config.Config, secretDet *detector.SecretDet
 	// Register configured SQL databases
 	for _, dbc := range appCfg.Databases {
 		err := s.dbRegistry.Add(db.Config{
-			Name:     dbc.Name,
-			Driver:   dbc.Driver,
-			DSN:      dbc.DSN,
-			MaxConns: dbc.MaxConns,
+			Name:            dbc.Name,
+			Driver:          dbc.Driver,
+			DSN:             dbc.DSN,
+			MaxConns:        dbc.MaxConns,
+			MaxIdleConns:    dbc.MaxIdleConns,
+			ConnMaxLifetime: time.Duration(dbc.ConnMaxLifetime) * time.Second,
+			ConnMaxIdleTime: time.Duration(dbc.ConnMaxIdleTime) * time.Second,
 		}, secretDet, piiDet)
 		if err != nil {
 			log.Printf("[WARN] DB %s: %v", dbc.Name, err)
@@ -142,10 +145,14 @@ func NewServer(cfg *Config, appCfg *config.Config, secretDet *detector.SecretDet
 	// Register configured Redis instances
 	for _, rc := range appCfg.RedisDBs {
 		err := s.redisRegistry.Add(db.RedisConfig{
-			Name:     rc.Name,
-			Addr:     rc.Addr,
-			Password: rc.Password,
-			DB:       rc.DB,
+			Name:            rc.Name,
+			Addr:            rc.Addr,
+			Username:        rc.Username,
+			Password:        rc.Password,
+			DB:              rc.DB,
+			PoolSize:        rc.PoolSize,
+			MinIdleConns:    rc.MinIdleConns,
+			ConnMaxIdleTime: time.Duration(rc.ConnMaxIdleTime) * time.Second,
 		}, secretDet, piiDet)
 		if err != nil {
 			log.Printf("[WARN] Redis %s: %v", rc.Name, err)

@@ -14,11 +14,15 @@ import (
 
 // RedisConfig for a Redis connection.
 type RedisConfig struct {
-	Name     string
-	Addr     string // host:port
-	Password string
-	DB       int
-	Timeout  time.Duration // optional, default 10s
+	Name            string
+	Addr            string // host:port
+	Username        string
+	Password        string
+	DB              int
+	PoolSize        int           // max connections in pool (default: 10)
+	MinIdleConns    int           // min idle connections kept open (default: 2)
+	ConnMaxIdleTime time.Duration // close idle connections after this (default: 5m)
+	Timeout         time.Duration // optional, default 10s
 }
 
 // RedisDB wraps a single Redis connection with masking.
@@ -59,10 +63,28 @@ func (r *RedisRegistry) Add(cfg RedisConfig, secretDet *detector.SecretDetector,
 		return fmt.Errorf("redis %q already registered", cfg.Name)
 	}
 
+	// Pool best-practice defaults
+	poolSize := cfg.PoolSize
+	if poolSize <= 0 {
+		poolSize = 10
+	}
+	minIdle := cfg.MinIdleConns
+	if minIdle <= 0 {
+		minIdle = 2
+	}
+	maxIdleTime := cfg.ConnMaxIdleTime
+	if maxIdleTime <= 0 {
+		maxIdleTime = 5 * time.Minute
+	}
+
 	client := redis.NewClient(&redis.Options{
-		Addr:     cfg.Addr,
-		Password: cfg.Password,
-		DB:       cfg.DB,
+		Addr:            cfg.Addr,
+		Username:        cfg.Username,
+		Password:        cfg.Password,
+		DB:              cfg.DB,
+		PoolSize:        poolSize,
+		MinIdleConns:    minIdle,
+		ConnMaxIdleTime: maxIdleTime,
 	})
 
 	ctx := context.Background()
