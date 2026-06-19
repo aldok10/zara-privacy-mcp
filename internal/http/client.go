@@ -143,10 +143,41 @@ func (r *Registry) Do(apiName string, req Request) (*Response, error) {
 		httpReq.Header.Set("Content-Type", "application/json")
 	}
 
-	// Execute
-	httpResp, err := r.client.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("request failed")
+	// Execute with retry (max 3 attempts for transient errors)
+	var httpResp *http.Response
+	maxRetries := 3
+	for attempt := range maxRetries {
+		httpResp, err = r.client.Do(httpReq)
+		if err == nil && httpResp.StatusCode < 500 {
+			break
+		}
+		if httpResp != nil {
+			httpResp.Body.Close()
+		}
+		if attempt == maxRetries-1 {
+			if err != nil {
+				return nil, fmt.Errorf("request failed after %d attempts", maxRetries)
+			}
+			break // use last 5xx response
+		}
+		// Exponential backoff: 100ms, 200ms
+		time.Sleep(time.Duration(100*(attempt+1)) * time.Millisecond)
+
+		// Rebuild request for retry (body needs to be re-readable)
+		if len(req.Body) > 0 {
+			bodyReader = bytes.NewReader(req.Body)
+		}
+		httpReq, _ = http.NewRequestWithContext(ctx, strings.ToUpper(req.Method), fullURL, bodyReader)
+		r.applyAuth(cfg, httpReq)
+		for k, v := range cfg.Headers {
+			httpReq.Header.Set(k, v)
+		}
+		for k, v := range req.Headers {
+			httpReq.Header.Set(k, v)
+		}
+		if len(req.Body) > 0 {
+			httpReq.Header.Set("Content-Type", "application/json")
+		}
 	}
 	defer httpResp.Body.Close()
 

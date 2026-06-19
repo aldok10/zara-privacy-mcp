@@ -5,19 +5,32 @@ import (
 	"strings"
 )
 
-// validateSQL blocks dangerous SQL statements.
-func validateSQL(query string) error {
-	upper := strings.TrimSpace(strings.ToUpper(query))
-
-	blocked := []string{
+// Package-level blocklists — allocated once, not per-call.
+var (
+	blockedSQLKeywords = []string{
 		"DROP ", "TRUNCATE ", "ALTER ", "CREATE ",
 		"GRANT ", "REVOKE ",
 		"LOAD_FILE", "INTO OUTFILE", "INTO DUMPFILE",
 		"XP_CMDSHELL", "COPY PROGRAM",
 	}
-	for _, b := range blocked {
-		if strings.Contains(upper, b) {
-			return fmt.Errorf("statement contains dangerous keyword %q", strings.TrimSpace(b))
+
+	blockedRedisCommands = map[string]bool{
+		"FLUSHALL": true, "FLUSHDB": true, "SHUTDOWN": true,
+		"CONFIG": true, "DEBUG": true, "EVAL": true, "EVALSHA": true,
+		"SCRIPT": true, "SLAVEOF": true, "REPLICAOF": true, "MODULE": true,
+		"BGSAVE": true, "BGREWRITEAOF": true, "CLUSTER": true,
+	}
+
+	blockedMongoOperators = []string{"$where", "$expr", "$function", "$accumulator"}
+)
+
+// validateSQL blocks dangerous SQL statements.
+func validateSQL(query string) error {
+	upper := strings.TrimSpace(strings.ToUpper(query))
+
+	for _, kw := range blockedSQLKeywords {
+		if strings.Contains(upper, kw) {
+			return fmt.Errorf("statement contains dangerous keyword %q", strings.TrimSpace(kw))
 		}
 	}
 
@@ -34,23 +47,16 @@ func validateSQL(query string) error {
 
 // validateRedisCommand blocks dangerous Redis commands.
 func validateRedisCommand(command string) error {
-	blocked := map[string]bool{
-		"FLUSHALL": true, "FLUSHDB": true, "SHUTDOWN": true,
-		"CONFIG": true, "DEBUG": true, "EVAL": true, "EVALSHA": true,
-		"SCRIPT": true, "SLAVEOF": true, "REPLICAOF": true, "MODULE": true,
-		"BGSAVE": true, "BGREWRITEAOF": true, "CLUSTER": true,
-	}
-	if blocked[strings.ToUpper(command)] {
+	if blockedRedisCommands[strings.ToUpper(command)] {
 		return fmt.Errorf("Redis command %q not allowed", command)
 	}
 	return nil
 }
 
-// validateMongoFilter blocks dangerous MongoDB operators.
+// validateMongoFilter blocks dangerous MongoDB operators recursively.
 func validateMongoFilter(filter map[string]interface{}) error {
-	blocked := []string{"$where", "$expr", "$function", "$accumulator"}
 	for key, val := range filter {
-		for _, op := range blocked {
+		for _, op := range blockedMongoOperators {
 			if strings.EqualFold(key, op) {
 				return fmt.Errorf("MongoDB operator %q not allowed", key)
 			}
@@ -62,4 +68,14 @@ func validateMongoFilter(filter map[string]interface{}) error {
 		}
 	}
 	return nil
+}
+
+// isReadQuery returns true if the query is a read-only statement.
+func isReadQuery(upper string) bool {
+	return strings.HasPrefix(upper, "SELECT") ||
+		strings.HasPrefix(upper, "WITH") ||
+		strings.HasPrefix(upper, "SHOW") ||
+		strings.HasPrefix(upper, "PRAGMA") ||
+		strings.HasPrefix(upper, "EXPLAIN") ||
+		strings.HasPrefix(upper, "DESCRIBE")
 }

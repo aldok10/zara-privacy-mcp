@@ -130,7 +130,9 @@ func (r *MongoRegistry) CloseAll() {
 func (m *MongoDB) Find(collection string, filter bson.M, limit int64) (*MongoResult, error) {
 	start := time.Now()
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	opts := options.Find()
 	if limit > 0 {
 		opts.SetLimit(limit)

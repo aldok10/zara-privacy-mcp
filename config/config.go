@@ -110,7 +110,8 @@ type APIConfig struct {
 type AIProviderConfig struct {
 	Name    string
 	BaseURL string
-	APIKey  string // resolved from env var
+	APIKey  string   // primary key (first resolved)
+	APIKeys []string // all keys (for pool round-robin)
 	Models  []string
 }
 
@@ -327,7 +328,23 @@ func (c *Config) parseAIProviders() {
 		}
 
 		apiKeyEnv := getEnv(prefix+name+"_API_KEY_ENV", "")
-		apiKey := os.Getenv(apiKeyEnv)
+
+		// Support comma-separated env var names for multi-key pools
+		var apiKeys []string
+		for _, envName := range strings.Split(apiKeyEnv, ",") {
+			envName = strings.TrimSpace(envName)
+			if envName == "" {
+				continue
+			}
+			if key := os.Getenv(envName); key != "" {
+				apiKeys = append(apiKeys, key)
+			}
+		}
+
+		var primaryKey string
+		if len(apiKeys) > 0 {
+			primaryKey = apiKeys[0]
+		}
 
 		modelsStr := getEnv(prefix+name+"_MODELS", "")
 		var models []string
@@ -343,7 +360,8 @@ func (c *Config) parseAIProviders() {
 		c.AIProviders[name] = AIProviderConfig{
 			Name:    name,
 			BaseURL: strings.TrimRight(baseURL, "/"),
-			APIKey:  apiKey,
+			APIKey:  primaryKey,
+			APIKeys: apiKeys,
 			Models:  models,
 		}
 	}

@@ -43,6 +43,15 @@ func (d *PIIDetector) registerBuiltin() {
 		// Address patterns (basic)
 		{Name: "Postal Code Indonesia", Regex: `\b[1-9][0-9]{4}\b`, Risk: RiskLow, Locales: []string{"id"}},
 		{Name: "Postal Code Singapore", Regex: `\b[0-9]{6}\b`, Risk: RiskLow, Locales: []string{"sg"}},
+
+		// US
+		{Name: "US SSN", Regex: `\b[0-9]{3}-[0-9]{2}-[0-9]{4}\b`, Risk: RiskHigh, Locales: []string{"us", "global"}},
+
+		// International
+		{Name: "IBAN", Regex: `\b[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}\b`, Risk: RiskHigh, Locales: []string{"global"}},
+
+		// Brazil
+		{Name: "CPF Brazil", Regex: `\b[0-9]{3}\.[0-9]{3}\.[0-9]{3}-[0-9]{2}\b`, Risk: RiskHigh, Locales: []string{"br", "global"}},
 	}
 }
 

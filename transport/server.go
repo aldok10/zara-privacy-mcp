@@ -10,13 +10,22 @@ import (
 
 	"github.com/aldok10/zara-privacy-mcp/application/tools"
 	"github.com/aldok10/zara-privacy-mcp/internal/observe"
+	"github.com/aldok10/zara-privacy-mcp/internal/version"
 )
 
+// MCPServer wraps the mcp-go server.
+type MCPServer struct {
+	s *server.MCPServer
+}
+
+// Server returns the underlying mcp-go server.
+func (m *MCPServer) Server() *server.MCPServer { return m.s }
+
 // NewMCPServer creates the MCP server with all 19 tools registered.
-func NewMCPServer(handlers *tools.Handlers, obs *observe.Client) *server.MCPServer {
+func NewMCPServer(handlers *tools.Handlers, obs *observe.Client) *MCPServer {
 	s := server.NewMCPServer(
 		"zara-privacy-mcp",
-		"0.3.0",
+		version.Version,
 		server.WithToolCapabilities(false),
 		server.WithRecovery(),
 		server.WithHooks(&server.Hooks{
@@ -39,7 +48,7 @@ func NewMCPServer(handlers *tools.Handlers, obs *observe.Client) *server.MCPServ
 	registerAITools(s, handlers)
 	registerConfigTools(s, handlers)
 
-	return s
+	return &MCPServer{s: s}
 }
 
 // ─── Privacy Tools ──────────────────────────────────────────────────────────
@@ -223,6 +232,13 @@ func registerAITools(s *server.MCPServer, h *tools.Handlers) {
 			mcp.WithDescription("List all configured AI providers and their available models."),
 		),
 		h.AIListProviders,
+	)
+
+	s.AddTool(
+		mcp.NewTool("ai_quota_status",
+			mcp.WithDescription("Show AI provider quota usage and statistics. Includes token usage per provider and remaining quota."),
+		),
+		h.AIQuotaStatus,
 	)
 }
 

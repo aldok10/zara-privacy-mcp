@@ -36,7 +36,7 @@ func setupTestServer(t *testing.T) *server.MCPServer {
 		DefaultLocales: []string{"id", "sg", "global"},
 	}
 
-	return transport.NewMCPServer(h, nil)
+	return transport.NewMCPServer(h, nil).Server()
 }
 
 func TestToolsRegistered(t *testing.T) {

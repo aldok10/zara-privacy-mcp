@@ -30,6 +30,7 @@ type Handlers struct {
 	RedisRegistry *db.RedisRegistry
 	APIRegistry   *httpproxy.Registry
 	AIRegistry    *ai.Registry
+	AIRouter      *ai.Router // optional: fallback routing
 	AppConfig     *config.Config
 	DefaultLocales []string
 	MaxTextSize   int
@@ -101,23 +102,27 @@ func (h *Handlers) MemoryFilter(ctx context.Context, req mcp.CallToolRequest) (*
 	}
 
 	scanResult := h.Engine.ScanContext(text)
-	allowed := true
-	reason := ""
-	var blocked []string
 
-	if scanResult.RiskScore >= detector.RiskHigh {
-		allowed = false
-		reason = "Contains high-risk sensitive data"
-		for _, f := range scanResult.SecretsFound {
-			if f.Risk >= detector.RiskHigh {
-				blocked = append(blocked, f.Type)
-			}
+	// Guard: if risk is below threshold, allow immediately
+	if scanResult.RiskScore < detector.RiskHigh {
+		return jsonResult(map[string]interface{}{
+			"allowed": true,
+			"reason":  "",
+			"blocked": []string{},
+		})
+	}
+
+	// High risk — collect blocked types
+	var blocked []string
+	for _, f := range scanResult.SecretsFound {
+		if f.Risk >= detector.RiskHigh {
+			blocked = append(blocked, f.Type)
 		}
 	}
 
 	return jsonResult(map[string]interface{}{
-		"allowed": allowed,
-		"reason":  reason,
+		"allowed": false,
+		"reason":  "Contains high-risk sensitive data",
 		"blocked": blocked,
 	})
 }
@@ -169,7 +174,7 @@ func (h *Handlers) DBQuery(ctx context.Context, req mcp.CallToolRequest) (*mcp.C
 
 	upper := strings.TrimSpace(strings.ToUpper(query))
 	var result *db.QueryResult
-	if strings.HasPrefix(upper, "SELECT") || strings.HasPrefix(upper, "WITH") || strings.HasPrefix(upper, "SHOW") || strings.HasPrefix(upper, "PRAGMA") {
+	if isReadQuery(upper) {
 		result, err = database.Query(query, params...)
 	} else {
 		result, err = database.Exec(query, params...)
@@ -439,7 +444,10 @@ func (h *Handlers) AIChat(ctx context.Context, req mcp.CallToolRequest) (*mcp.Ca
 		return mcp.NewToolResultError("messages is required"), nil
 	}
 
-	msgBytes, _ := json.Marshal(messagesRaw)
+	msgBytes, err := json.Marshal(messagesRaw)
+	if err != nil {
+		return mcp.NewToolResultError("invalid messages"), nil
+	}
 	var messages []ai.ChatMessage
 	if err := json.Unmarshal(msgBytes, &messages); err != nil {
 		return mcp.NewToolResultError("invalid messages format"), nil
@@ -450,7 +458,13 @@ func (h *Handlers) AIChat(ctx context.Context, req mcp.CallToolRequest) (*mcp.Ca
 		Messages: messages,
 	}
 
-	response, err := h.AIRegistry.Chat(providerName, chatReq, h.Engine)
+	// Use router with fallback if configured, otherwise direct
+	var response *ai.ChatResponse
+	if h.AIRouter != nil {
+		response, err = h.AIRouter.ChatWithFallback(providerName, chatReq)
+	} else {
+		response, err = h.AIRegistry.Chat(providerName, chatReq, h.Engine)
+	}
 	if err != nil {
 		return mcp.NewToolResultError("AI request failed"), nil
 	}
@@ -474,6 +488,16 @@ func (h *Handlers) AIListProviders(ctx context.Context, req mcp.CallToolRequest)
 	return jsonResult(map[string]interface{}{
 		"providers": details,
 		"count":     len(details),
+	})
+}
+
+func (h *Handlers) AIQuotaStatus(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if h.AIRouter == nil {
+		return jsonResult(map[string]interface{}{"quota": map[string]interface{}{}, "usage": []interface{}{}})
+	}
+	return jsonResult(map[string]interface{}{
+		"quota": h.AIRouter.Quota().Status(),
+		"usage": h.AIRouter.Stats(),
 	})
 }
 
