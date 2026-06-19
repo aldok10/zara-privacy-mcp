@@ -443,3 +443,45 @@ func getEnvBool(key string, fallback bool) bool {
 	}
 	return fallback
 }
+
+// ─── Validation ─────────────────────────────────────────────────────────────
+
+// Validate checks configuration for common errors.
+// Returns nil if valid, error describing the problem otherwise.
+func (c *Config) Validate() error {
+	if c.Port != "" {
+		p, err := strconv.Atoi(c.Port)
+		if err != nil || p < 1 || p > 65535 {
+			return fmt.Errorf("invalid port: %s", c.Port)
+		}
+	}
+	for name, db := range c.Databases {
+		if db.DSN == "" {
+			return fmt.Errorf("database %s: DSN is empty", name)
+		}
+	}
+	for name, m := range c.MongoDBs {
+		if m.URI == "" {
+			return fmt.Errorf("mongodb %s: URI is empty", name)
+		}
+		if m.Database == "" {
+			return fmt.Errorf("mongodb %s: database name is empty", name)
+		}
+	}
+	for name, r := range c.RedisDBs {
+		if r.Addr == "" {
+			return fmt.Errorf("redis %s: address is empty", name)
+		}
+	}
+	for name, a := range c.APIs {
+		if a.BaseURL == "" {
+			return fmt.Errorf("api %s: URL is empty", name)
+		}
+	}
+	for name, ai := range c.AIProviders {
+		if ai.BaseURL == "" {
+			return fmt.Errorf("ai provider %s: base URL is empty", name)
+		}
+	}
+	return nil
+}

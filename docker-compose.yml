@@ -1,0 +1,82 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: zara
+      POSTGRES_PASSWORD: zara_secret
+      POSTGRES_DB: testdb
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zara"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: root_secret
+      MYSQL_USER: zara
+      MYSQL_PASSWORD: zara_secret
+      MYSQL_DATABASE: testdb
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --requirepass zara_secret
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "zara_secret", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  mongo:
+    image: mongo:7
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: zara
+      MONGO_INITDB_ROOT_PASSWORD: zara_secret
+    ports:
+      - "27017:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Seed test data after services are healthy
+  seed:
+    image: postgres:16-alpine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        PGPASSWORD=zara_secret psql -h postgres -U zara -d testdb -c "
+        CREATE TABLE IF NOT EXISTS users (
+          id SERIAL PRIMARY KEY,
+          login BIGINT NOT NULL,
+          name VARCHAR(100),
+          email VARCHAR(200),
+          phone VARCHAR(50),
+          country VARCHAR(50),
+          balance DECIMAL(15,2) DEFAULT 0,
+          created_at TIMESTAMP DEFAULT NOW()
+        );
+        INSERT INTO users (login, name, email, phone, country, balance) VALUES
+          (92560001, 'Alice Doe', 'alice@example.com', '+6281234567890', 'Indonesia', 1500.50),
+          (92560002, 'Bob Smith', 'bob@test.com', '+6289876543210', 'Indonesia', 3200.00),
+          (92560003, 'Charlie Tan', 'charlie@mail.sg', '+6591234567', 'Singapore', 750.25)
+        ON CONFLICT DO NOTHING;
+        "

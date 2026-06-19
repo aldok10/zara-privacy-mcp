@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
@@ -117,8 +118,8 @@ func (s *MappingStore) GetOrCreate(original string, mtype string) detector.Mappi
 	}
 	s.inMemory[placeholder] = mapping
 
-	// Persist encrypted
-	go s.persistMapping(mapping)
+	// Persist encrypted (synchronous — fast SQLite write, error logged)
+	s.persistMapping(mapping)
 
 	return mapping
 }
@@ -195,13 +196,16 @@ func (s *MappingStore) RestoreFromSnapshot(encrypted string) error {
 func (s *MappingStore) persistMapping(m detector.Mapping) {
 	encrypted, err := s.enc.EncryptString(m.Original)
 	if err != nil {
+		log.Printf("[WARN] persistMapping encrypt: %v", err)
 		return
 	}
 
-	_, _ = s.db.Exec(
+	if _, err := s.db.Exec(
 		"INSERT OR REPLACE INTO mappings (placeholder, original_encrypted, type, accessed_at) VALUES (?, ?, ?, ?)",
 		m.Placeholder, encrypted, m.Type, time.Now().UTC(),
-	)
+	); err != nil {
+		log.Printf("[WARN] persistMapping write: %v", err)
+	}
 }
 
 // Close closes the database connection.

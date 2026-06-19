@@ -19,8 +19,15 @@ jobs:
       - name: Build
         run: make build
 
-      - name: Test
-        run: make test
+      - name: Test with coverage
+        run: |
+          go test -count=1 -race -coverprofile=coverage.out ./...
+          COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | tr -d '%')
+          echo "Coverage: ${COVERAGE}%"
+          if [ $(echo "$COVERAGE < 30" | bc -l) -eq 1 ]; then
+            echo "::error::Coverage ${COVERAGE}% is below 30% threshold"
+            exit 1
+          fi
         env:
           ZARA_ENCRYPTION_KEY: "ci-test-key-32-bytes-long-minimum!!"
 
@@ -28,6 +35,11 @@ jobs:
         run: |
           go install honnef.co/go/tools/cmd/staticcheck@latest
           make lint
+
+      - name: Vulnerability check
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
 
       - name: Smoke test
         run: |

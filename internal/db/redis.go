@@ -4,11 +4,11 @@ package db
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/aldok10/zara-privacy-mcp/internal/detector"
+	"github.com/aldok10/zara-privacy-mcp/internal/masking"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -29,6 +29,7 @@ type RedisConfig struct {
 type RedisDB struct {
 	Config    RedisConfig
 	client    *redis.Client
+	masker    *masking.Masker
 	secretDet *detector.SecretDetector
 	piiDet    *detector.PIIDetector
 }
@@ -95,6 +96,7 @@ func (r *RedisRegistry) Add(cfg RedisConfig, secretDet *detector.SecretDetector,
 	r.conns[cfg.Name] = &RedisDB{
 		Config:    cfg,
 		client:    client,
+		masker:    masking.New(secretDet, piiDet),
 		secretDet: secretDet,
 		piiDet:    piiDet,
 	}
@@ -164,35 +166,20 @@ func (r *RedisDB) Keys(pattern string) ([]string, error) {
 func (r *RedisDB) maskResult(val interface{}, command string) (interface{}, []MaskedField) {
 	switch v := val.(type) {
 	case string:
-		if v == "" {
+		masked, findings := r.masker.MaskString(v)
+		if len(findings) == 0 {
 			return v, nil
 		}
-		secrets := r.secretDet.Scan(v)
-		pii := r.piiDet.ScanWithContext(v)
-		if len(secrets) == 0 && len(pii) == 0 {
-			return v, nil
-		}
-		var masked []MaskedField
-		maskedVal := v
-		for _, s := range secrets {
-			maskedVal = strings.Replace(maskedVal, s.Value, detector.MaskSecret(s.Value), 1)
-			masked = append(masked, MaskedField{
+		var fields []MaskedField
+		for _, f := range findings {
+			fields = append(fields, MaskedField{
 				Column: command,
 				Row:    0,
-				Type:   s.Type,
-				Risk:   int(s.Risk),
+				Type:   f.Type,
+				Risk:   int(f.Risk),
 			})
 		}
-		for _, p := range pii {
-			maskedVal = strings.Replace(maskedVal, p.Value, detector.MaskSecret(p.Value), 1)
-			masked = append(masked, MaskedField{
-				Column: command,
-				Row:    0,
-				Type:   p.Type,
-				Risk:   int(p.Risk),
-			})
-		}
-		return maskedVal, masked
+		return masked, fields
 
 	case []interface{}:
 		var allMasked []MaskedField

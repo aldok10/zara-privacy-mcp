@@ -4,11 +4,11 @@ package db
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/aldok10/zara-privacy-mcp/internal/detector"
+	"github.com/aldok10/zara-privacy-mcp/internal/masking"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -27,6 +27,7 @@ type MongoDB struct {
 	Config    MongoConfig
 	client    *mongo.Client
 	db        *mongo.Database
+	masker    *masking.Masker
 	secretDet *detector.SecretDetector
 	piiDet    *detector.PIIDetector
 }
@@ -84,6 +85,7 @@ func (r *MongoRegistry) Add(cfg MongoConfig, secretDet *detector.SecretDetector,
 		Config:    cfg,
 		client:    client,
 		db:        client.Database(cfg.Database),
+		masker:    masking.New(secretDet, piiDet),
 		secretDet: secretDet,
 		piiDet:    piiDet,
 	}
@@ -237,42 +239,19 @@ func (m *MongoDB) flattenDoc(prefix string, doc bson.M, out map[string]interface
 
 // maskValue checks a string value for secrets/PII and masks if found.
 func (m *MongoDB) maskValue(val, field string, rowIdx int) (interface{}, []MaskedField) {
-	secrets := m.secretDet.Scan(val)
-	pii := m.piiDet.ScanWithContext(val)
-
-	if len(secrets) == 0 && len(pii) == 0 {
+	masked, findings := m.masker.MaskString(val)
+	if len(findings) == 0 {
 		return val, nil
 	}
 
-	var masked []MaskedField
-	maskedVal := val
-
-	for _, s := range secrets {
-		maskedVal = replaceOnce(maskedVal, s.Value, detector.MaskSecret(s.Value))
-		masked = append(masked, MaskedField{
+	var fields []MaskedField
+	for _, f := range findings {
+		fields = append(fields, MaskedField{
 			Column: field,
 			Row:    rowIdx,
-			Type:   s.Type,
-			Risk:   int(s.Risk),
+			Type:   f.Type,
+			Risk:   int(f.Risk),
 		})
 	}
-	for _, p := range pii {
-		maskedVal = replaceOnce(maskedVal, p.Value, detector.MaskSecret(p.Value))
-		masked = append(masked, MaskedField{
-			Column: field,
-			Row:    rowIdx,
-			Type:   p.Type,
-			Risk:   int(p.Risk),
-		})
-	}
-
-	return maskedVal, masked
-}
-
-// replaceOnce replaces only the first occurrence of old with new.
-func replaceOnce(s, old, new string) string {
-	if idx := strings.Index(s, old); idx >= 0 {
-		return s[:idx] + new + s[idx+len(old):]
-	}
-	return s
+	return masked, fields
 }

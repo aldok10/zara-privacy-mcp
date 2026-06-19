@@ -4,6 +4,7 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/aldok10/zara-privacy-mcp/internal/detector"
+	"github.com/aldok10/zara-privacy-mcp/internal/masking"
 
 	// Register database/sql drivers
 	_ "github.com/ClickHouse/clickhouse-go/v2"
@@ -31,6 +33,7 @@ type Registry struct {
 type DB struct {
 	Config    Config
 	db        *sql.DB
+	masker    *masking.Masker
 	secretDet *detector.SecretDetector
 	piiDet    *detector.PIIDetector
 }
@@ -208,6 +211,7 @@ func (r *Registry) Add(cfg Config, secretDet *detector.SecretDetector, piiDet *d
 	r.conns[cfg.Name] = &DB{
 		Config:    cfg,
 		db:        db,
+		masker:    masking.New(secretDet, piiDet),
 		secretDet: secretDet,
 		piiDet:    piiDet,
 	}
@@ -345,7 +349,10 @@ func (d *DB) placeholders(args []interface{}) string {
 func (d *DB) Query(query string, args ...interface{}) (*QueryResult, error) {
 	start := time.Now()
 
-	rows, err := d.db.Query(query, args...)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	rows, err := d.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query: %w", err)
 	}
@@ -410,7 +417,10 @@ func (d *DB) Query(query string, args ...interface{}) (*QueryResult, error) {
 func (d *DB) Exec(query string, args ...interface{}) (*QueryResult, error) {
 	start := time.Now()
 
-	result, err := d.db.Exec(query, args...)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	result, err := d.db.ExecContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("exec: %w", err)
 	}
@@ -681,36 +691,21 @@ func (d *DB) describeClickHouse(table string) ([]ColumnInfo, error) {
 
 // maskValue checks a single cell value for secrets/PII and masks if found.
 func (d *DB) maskValue(val, column string, rowIdx int) (interface{}, []MaskedField) {
-	secrets := d.secretDet.Scan(val)
-	pii := d.piiDet.ScanWithContext(val)
-
-	if len(secrets) == 0 && len(pii) == 0 {
+	masked, findings := d.masker.MaskString(val)
+	if len(findings) == 0 {
 		return val, nil
 	}
 
-	var masked []MaskedField
-	maskedVal := val
-
-	for _, s := range secrets {
-		maskedVal = strings.Replace(maskedVal, s.Value, detector.MaskSecret(s.Value), 1)
-		masked = append(masked, MaskedField{
+	var fields []MaskedField
+	for _, f := range findings {
+		fields = append(fields, MaskedField{
 			Column: column,
 			Row:    rowIdx,
-			Type:   s.Type,
-			Risk:   int(s.Risk),
+			Type:   f.Type,
+			Risk:   int(f.Risk),
 		})
 	}
-	for _, p := range pii {
-		maskedVal = strings.Replace(maskedVal, p.Value, detector.MaskSecret(p.Value), 1)
-		masked = append(masked, MaskedField{
-			Column: column,
-			Row:    rowIdx,
-			Type:   p.Type,
-			Risk:   int(p.Risk),
-		})
-	}
-
-	return maskedVal, masked
+	return masked, fields
 }
 
 // sanitizeName safely quotes a table/column name.

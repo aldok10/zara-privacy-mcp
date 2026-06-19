@@ -17,12 +17,14 @@ import (
 	"time"
 
 	"github.com/aldok10/zara-privacy-mcp/internal/detector"
+	"github.com/aldok10/zara-privacy-mcp/internal/masking"
 )
 
 // Registry manages configured API endpoints.
 type Registry struct {
-	apis     map[string]APIConfig
-	client   *http.Client
+	apis      map[string]APIConfig
+	client    *http.Client
+	masker    *masking.Masker
 	secretDet *detector.SecretDetector
 	piiDet    *detector.PIIDetector
 }
@@ -59,6 +61,7 @@ func NewRegistry(secretDet *detector.SecretDetector, piiDet *detector.PIIDetecto
 	return &Registry{
 		apis:      make(map[string]APIConfig),
 		client:    &http.Client{Timeout: 30 * time.Second},
+		masker:    masking.New(secretDet, piiDet),
 		secretDet: secretDet,
 		piiDet:    piiDet,
 	}
@@ -200,24 +203,11 @@ func (r *Registry) applyAuth(cfg APIConfig, req *http.Request) {
 }
 
 func (r *Registry) maskResponse(body *string) []detector.Finding {
-	secrets := r.secretDet.Scan(*body)
-	pii := r.piiDet.ScanWithContext(*body)
-
-	var all []detector.Finding
-	all = append(all, secrets...)
-	all = append(all, pii...)
-
-	if len(all) == 0 {
-		return nil
+	masked, findings := r.masker.MaskString(*body)
+	if len(findings) > 0 {
+		*body = masked
 	}
-
-	masked := *body
-	for _, f := range all {
-		masked = strings.Replace(masked, f.Value, detector.MaskSecret(f.Value), 1)
-	}
-	*body = masked
-
-	return all
+	return findings
 }
 
 // validateURL blocks requests to internal/private networks (SSRF prevention).
