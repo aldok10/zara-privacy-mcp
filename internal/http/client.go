@@ -243,8 +243,11 @@ func (r *Registry) maskResponse(body *string) []detector.Finding {
 
 // validateURL blocks requests to internal/private networks (SSRF prevention).
 func validateURL(rawURL string) error {
+	if rawURL == "" {
+		return fmt.Errorf("invalid URL")
+	}
 	parsed, err := url.Parse(rawURL)
-	if err != nil {
+	if err != nil || parsed.Host == "" {
 		return fmt.Errorf("invalid URL")
 	}
 
@@ -255,9 +258,24 @@ func validateURL(rawURL string) error {
 
 	host := parsed.Hostname()
 
-	// Block cloud metadata endpoints
-	if host == "169.254.169.254" || host == "100.100.100.200" || host == "metadata.google.internal" {
-		return fmt.Errorf("blocked: cloud metadata endpoint")
+	// Block known internal hostnames
+	blockedHosts := []string{"localhost", "metadata.google.internal", "kubernetes.default.svc", "instance-data.ec2.internal"}
+	for _, bh := range blockedHosts {
+		if host == bh {
+			return fmt.Errorf("blocked: internal hostname")
+		}
+	}
+	// Block any *.internal suffix
+	if strings.HasSuffix(host, ".internal") {
+		return fmt.Errorf("blocked: internal hostname")
+	}
+
+	// Block cloud metadata endpoints (AWS, GCP, Alibaba, ECS)
+	blockedIPs := []string{"169.254.169.254", "100.100.100.200", "169.254.170.2", "fd00:ec2::254"}
+	for _, bip := range blockedIPs {
+		if host == bip {
+			return fmt.Errorf("blocked: cloud metadata endpoint")
+		}
 	}
 
 	// Block private/internal IPs

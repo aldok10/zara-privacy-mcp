@@ -66,6 +66,15 @@ func validateMongoFilter(filter map[string]any) error {
 				return err
 			}
 		}
+		if arr, ok := val.([]any); ok {
+			for _, elem := range arr {
+				if sub, ok := elem.(map[string]any); ok {
+					if err := validateMongoFilter(sub); err != nil {
+						return err
+					}
+				}
+			}
+		}
 	}
 	return nil
 }

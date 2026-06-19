@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"fmt"
 	"os"
 	"time"
 
@@ -13,10 +14,10 @@ type ConfigLoader struct{}
 func (c *ConfigLoader) Load() (config.Config, error) {
 	cfg := config.Load()
 	if cfg.EncryptionKey == "" {
-		cfg.EncryptionKey = "zara-privacy-mcp-default-key-change-me!"
+		return config.Config{}, fmt.Errorf("ZARA_ENCRYPTION_KEY must be set (min 16 chars)")
 	}
 	if len(cfg.EncryptionKey) < 16 {
-		os.Exit(1)
+		return config.Config{}, fmt.Errorf("ZARA_ENCRYPTION_KEY must be at least 16 characters")
 	}
 	if err := cfg.Validate(); err != nil {
 		return config.Config{}, err

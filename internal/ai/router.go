@@ -115,7 +115,7 @@ func (rt *Router) ChatWithFallback(providerName string, req ChatRequest) (*ChatR
 			}
 			lastErr = err
 			rt.trackError(name)
-			log.Printf("[AI-ROUTER] %s attempt %d failed: %v", name, attempt+1, err)
+			log.Printf("[AI-ROUTER] %s attempt %d failed", name, attempt+1)
 		}
 	}
 

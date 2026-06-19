@@ -386,7 +386,7 @@ func (h *Handlers) HTTPRequest(ctx context.Context, req mcp.CallToolRequest) (*m
 		method = m
 	}
 	timeout := 30
-	if t, ok := args["timeout"].(float64); ok && t > 0 {
+	if t, ok := args["timeout"].(float64); ok && t > 0 && t <= 120 {
 		timeout = int(t)
 	}
 

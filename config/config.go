@@ -414,7 +414,7 @@ func (c *Config) Summary() string {
 
 	b.WriteString(fmt.Sprintf("\nMongoDB (%d):\n", len(c.MongoDBs)))
 	for _, m := range c.MongoDBs {
-		b.WriteString(fmt.Sprintf("  ─ %s → %s/%s\n", m.Name, m.URI, m.Database))
+		b.WriteString(fmt.Sprintf("  ─ %s → %s\n", m.Name, m.Database))
 	}
 
 	b.WriteString(fmt.Sprintf("\nRedis (%d):\n", len(c.RedisDBs)))
