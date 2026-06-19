@@ -97,3 +97,7 @@ Multiple subskills OK. Load only what's needed.
 - [golang50shades.com](https://golang50shades.com/) — Gotchas
 - [goperf.dev](https://goperf.dev/) — Performance
 - [go.dev/doc/effective_go](https://go.dev/doc/effective_go) — Effective Go
+
+## Project Context
+
+**ALWAYS read `PROJECT.md` in this skill directory before writing code.** It contains project-specific patterns, conventions, and rules that override generic advice. Load it with every task.

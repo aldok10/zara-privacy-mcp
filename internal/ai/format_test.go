@@ -29,7 +29,7 @@ func TestTranslateToProvider_OpenAI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var req map[string]interface{}
+	var req map[string]any
 	json.Unmarshal(body, &req)
 	if req["model"] != "gpt-4o" {
 		t.Errorf("want model gpt-4o, got %v", req["model"])
@@ -45,12 +45,12 @@ func TestTranslateToProvider_Anthropic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var req map[string]interface{}
+	var req map[string]any
 	json.Unmarshal(body, &req)
 	if req["system"] != "you are helpful" {
 		t.Error("expected system as top-level field")
 	}
-	messages := req["messages"].([]interface{})
+	messages := req["messages"].([]any)
 	if len(messages) != 1 {
 		t.Errorf("expected 1 message (system extracted), got %d", len(messages))
 	}

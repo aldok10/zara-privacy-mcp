@@ -107,7 +107,7 @@ func TestHighEntropyDetection(t *testing.T) {
 		threshold float64
 		want      bool
 	}{
-		{"aB3dE5gH7jK9mL0nP2qR4sT6vW8xY1zC5", 4.0, true},    // random-like
+		{"aB3dE5gH7jK9mL0nP2qR4sT6vW8xY1zC5", 4.0, true},        // random-like
 		{"hello-world-simple-text-nothing-special", 4.0, false}, // low entropy
 		{"sk-proj-RandomKeyForTestingOnly12345678", 4.0, true},
 		{"short", 4.0, false}, // too short
@@ -145,11 +145,4 @@ func TestMaskSecret(t *testing.T) {
 			}
 		})
 	}
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

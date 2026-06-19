@@ -52,7 +52,7 @@ func TestScanContext(t *testing.T) {
 
 	req := mcp.CallToolRequest{}
 	req.Params.Name = "scan_context"
-	req.Params.Arguments = map[string]interface{}{
+	req.Params.Arguments = map[string]any{
 		"text": "my email is test@example.com",
 	}
 
@@ -87,7 +87,7 @@ func TestSecurityBlocksDropTable(t *testing.T) {
 
 	req := mcp.CallToolRequest{}
 	req.Params.Name = "db_query"
-	req.Params.Arguments = map[string]interface{}{
+	req.Params.Arguments = map[string]any{
 		"database": "test",
 		"query":    "DROP TABLE users",
 	}
@@ -110,7 +110,7 @@ func TestSecurityBlocksFlushAll(t *testing.T) {
 
 	req := mcp.CallToolRequest{}
 	req.Params.Name = "redis_exec"
-	req.Params.Arguments = map[string]interface{}{
+	req.Params.Arguments = map[string]any{
 		"database": "test",
 		"command":  "FLUSHALL",
 	}
@@ -128,11 +128,11 @@ func TestSecurityBlocksFlushAll(t *testing.T) {
 func callTool(s *server.MCPServer, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	ctx := context.Background()
 	// Use the server's HandleMessage to simulate a tool call
-	jsonReq := map[string]interface{}{
+	jsonReq := map[string]any{
 		"jsonrpc": "2.0",
 		"id":      1,
 		"method":  "tools/call",
-		"params": map[string]interface{}{
+		"params": map[string]any{
 			"name":      req.Params.Name,
 			"arguments": req.Params.Arguments,
 		},

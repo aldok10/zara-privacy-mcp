@@ -78,17 +78,17 @@ func TestValidateRedisCommand(t *testing.T) {
 func TestValidateMongoFilter(t *testing.T) {
 	tests := []struct {
 		name    string
-		filter  map[string]interface{}
+		filter  map[string]any
 		wantErr bool
 	}{
-		{"block $where", map[string]interface{}{"$where": "this.a > 1"}, true},
-		{"block $expr", map[string]interface{}{"$expr": map[string]interface{}{"$gt": []interface{}{"$a", 1}}}, true},
-		{"block $function", map[string]interface{}{"$function": "return true"}, true},
-		{"block $accumulator", map[string]interface{}{"$accumulator": "sum"}, true},
-		{"block nested $where", map[string]interface{}{"field": map[string]interface{}{"$where": "1==1"}}, true},
-		{"allow simple filter", map[string]interface{}{"name": "test"}, false},
-		{"allow $gt", map[string]interface{}{"age": map[string]interface{}{"$gt": 18}}, false},
-		{"allow $and", map[string]interface{}{"$and": []interface{}{"a", "b"}}, false},
+		{"block $where", map[string]any{"$where": "this.a > 1"}, true},
+		{"block $expr", map[string]any{"$expr": map[string]any{"$gt": []any{"$a", 1}}}, true},
+		{"block $function", map[string]any{"$function": "return true"}, true},
+		{"block $accumulator", map[string]any{"$accumulator": "sum"}, true},
+		{"block nested $where", map[string]any{"field": map[string]any{"$where": "1==1"}}, true},
+		{"allow simple filter", map[string]any{"name": "test"}, false},
+		{"allow $gt", map[string]any{"age": map[string]any{"$gt": 18}}, false},
+		{"allow $and", map[string]any{"$and": []any{"a", "b"}}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
