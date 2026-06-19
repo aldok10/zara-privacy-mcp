@@ -91,29 +91,35 @@ func (e *RedactEngine) RedactContext(text string, locales ...string) *detector.R
 
 // UnredactResponse restores original values in an LLM response.
 func (e *RedactEngine) UnredactResponse(text string) string {
-	for {
-		start := strings.Index(text, "[")
+	var result strings.Builder
+	i := 0
+	for i < len(text) {
+		start := strings.Index(text[i:], "[")
 		if start == -1 {
+			result.WriteString(text[i:])
 			break
 		}
-		end := strings.Index(text[start:], "]")
+		// Write everything before the bracket
+		result.WriteString(text[i : i+start])
+
+		end := strings.Index(text[i+start:], "]")
 		if end == -1 {
+			result.WriteString(text[i+start:])
 			break
 		}
-		end += start + 1
-		placeholder := text[start:end]
+		end += i + start + 1
+		placeholder := text[i+start : end]
 
 		mapping, ok := e.mappingStore.Lookup(placeholder)
-		if !ok {
-			// Skip unknown placeholders
-			text = text[:start] + text[end:]
-			continue
+		if ok {
+			result.WriteString(mapping.Original)
+		} else {
+			// Keep unknown brackets intact (don't corrupt text)
+			result.WriteString(placeholder)
 		}
-
-		text = text[:start] + mapping.Original + text[end:]
+		i = end
 	}
-
-	return text
+	return result.String()
 }
 
 // collectAllFindings gathers all secrets and PII from text.
@@ -202,12 +208,6 @@ func estimateTokens(s string) int {
 	charCount := len(s)
 
 	// Estimate: 1 token ≈ 4 chars
-	tokens := charCount / 4
-	if tokens < len(words) {
-		tokens = len(words)
-	}
-	if tokens < 1 {
-		tokens = 1
-	}
+	tokens := max(max(charCount/4, len(words)), 1)
 	return tokens
 }

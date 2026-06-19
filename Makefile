@@ -3,7 +3,17 @@
 BINARY   = zara-privacy-mcp
 BINDIR   = /usr/local/bin
 GO       = go
-GOFLAGS  = -ldflags="-s -w"
+
+# Version info injected at build time
+VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+COMMIT      := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+BUILD_DATE  := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+MODULE      := github.com/aldok10/zara-privacy-mcp
+LDFLAGS     := -s -w \
+	-X $(MODULE)/internal/version.Version=$(VERSION) \
+	-X $(MODULE)/internal/version.Commit=$(COMMIT) \
+	-X $(MODULE)/internal/version.Date=$(BUILD_DATE)
+GOFLAGS     = -ldflags="$(LDFLAGS)"
 
 # Detect OS for install path
 UNAME_S := $(shell uname -s)
@@ -16,6 +26,7 @@ endif
 # ─── Build ────────────────────────────────────────────────────────────────────
 
 build:
+	@echo "Building $(VERSION) ($(COMMIT)) at $(BUILD_DATE)"
 	$(GO) build $(GOFLAGS) -o $(BINARY) ./cmd/server/
 
 build-linux:
@@ -23,6 +34,9 @@ build-linux:
 
 build-darwin:
 	GOOS=darwin GOARCH=arm64 $(GO) build $(GOFLAGS) -o $(BINARY)-darwin-arm64 ./cmd/server/
+
+build-windows:
+	GOOS=windows GOARCH=amd64 $(GO) build $(GOFLAGS) -o $(BINARY)-windows-amd64.exe ./cmd/server/
 
 # ─── Run ──────────────────────────────────────────────────────────────────────
 
@@ -102,6 +116,7 @@ clean:
 	rm -f $(BINARY)
 	rm -f $(BINARY)-linux-amd64
 	rm -f $(BINARY)-darwin-arm64
+	rm -f $(BINARY)-windows-amd64.exe
 	rm -f coverage.out coverage.html
 	rm -rf /tmp/zara-privacy-dev.db*
 

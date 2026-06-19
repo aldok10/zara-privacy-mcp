@@ -4,7 +4,6 @@ package ai
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -43,12 +42,12 @@ type ChatMessage struct {
 
 // ChatResponse from an LLM provider.
 type ChatResponse struct {
-	Provider     string `json:"provider"`
-	Model        string `json:"model"`
-	Content      string `json:"content"`
-	Duration     string `json:"duration"`
-	TokensUsed   int    `json:"tokens_used,omitempty"`
-	Redacted     int    `json:"redacted_fields,omitempty"`
+	Provider   string `json:"provider"`
+	Model      string `json:"model"`
+	Content    string `json:"content"`
+	Duration   string `json:"duration"`
+	TokensUsed int    `json:"tokens_used,omitempty"`
+	Redacted   int    `json:"redacted_fields,omitempty"`
 }
 
 // NewRegistry creates an AI provider registry.
@@ -119,13 +118,9 @@ func (r *Registry) Chat(providerName string, req ChatRequest, redactEngine *engi
 	}
 
 	// ── Step 2: Send to provider ──
-	chatReq := ChatRequest{
-		Model:    req.Model,
-		Messages: redactedMessages,
-		Stream:   false,
-	}
-
-	body, err := json.Marshal(chatReq)
+	// Detect format and translate messages to provider-native format
+	format := DetectFormat(provider.BaseURL)
+	body, err := TranslateToProvider(format, req.Model, redactedMessages)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
@@ -139,7 +134,7 @@ func (r *Registry) Chat(providerName string, req ChatRequest, redactEngine *engi
 
 	r.applyAuth(provider, httpReq)
 	httpReq.Header.Set("Content-Type", "application/json")
-	if strings.ToLower(providerName) == "anthropic" {
+	if format == FormatAnthropic {
 		httpReq.Header.Set("anthropic-version", "2023-06-01")
 	}
 
@@ -158,10 +153,10 @@ func (r *Registry) Chat(providerName string, req ChatRequest, redactEngine *engi
 		return nil, fmt.Errorf("%s returned %d: %s", providerName, httpResp.StatusCode, string(respBody))
 	}
 
-	// ── Step 3: Parse response ──
-	content, err := r.parseResponse(providerName, respBody)
-	if err != nil {
-		return nil, fmt.Errorf("parse response: %w", err)
+	// ── Step 3: Parse response using format-aware extraction ──
+	content, tokens := ExtractContent(format, respBody)
+	if content == "" {
+		return nil, fmt.Errorf("empty response from %s", providerName)
 	}
 
 	// ── Step 4: Unredact the response ──
@@ -172,6 +167,7 @@ func (r *Registry) Chat(providerName string, req ChatRequest, redactEngine *engi
 		Model:      req.Model,
 		Content:    content,
 		Duration:   time.Since(start).Round(time.Millisecond).String(),
+		TokensUsed: tokens,
 		Redacted:   totalRedacted,
 	}, nil
 }
@@ -204,66 +200,5 @@ func (r *Registry) applyAuth(p Provider, req *http.Request) {
 	default:
 		// OpenAI-compatible: Authorization: Bearer xxx
 		req.Header.Set("Authorization", "Bearer "+p.APIKey)
-	}
-}
-
-// parseResponse extracts the content text from provider-specific response formats.
-func (r *Registry) parseResponse(providerName string, body []byte) (string, error) {
-	name := strings.ToLower(providerName)
-
-	switch name {
-	case "anthropic":
-		// Anthropic format: { "content": [{"type":"text","text":"..."}], "model":"..." }
-		var resp struct {
-			Content []struct {
-				Type string `json:"type"`
-				Text string `json:"text"`
-			} `json:"content"`
-		}
-		if err := json.Unmarshal(body, &resp); err != nil {
-			return "", err
-		}
-		for _, c := range resp.Content {
-			if c.Type == "text" {
-				return c.Text, nil
-			}
-		}
-		return "", fmt.Errorf("no text content in response")
-
-	case "gemini", "google":
-		// Gemini format: { "candidates": [{"content":{"parts":[{"text":"..."}]}}] }
-		var resp struct {
-			Candidates []struct {
-				Content struct {
-					Parts []struct {
-						Text string `json:"text"`
-					} `json:"parts"`
-				} `json:"content"`
-			} `json:"candidates"`
-		}
-		if err := json.Unmarshal(body, &resp); err != nil {
-			return "", err
-		}
-		if len(resp.Candidates) > 0 && len(resp.Candidates[0].Content.Parts) > 0 {
-			return resp.Candidates[0].Content.Parts[0].Text, nil
-		}
-		return "", fmt.Errorf("no candidates in response")
-
-	default:
-		// OpenAI-compatible: { "choices": [{"message":{"content":"..."}}] }
-		var resp struct {
-			Choices []struct {
-				Message struct {
-					Content string `json:"content"`
-				} `json:"message"`
-			} `json:"choices"`
-		}
-		if err := json.Unmarshal(body, &resp); err != nil {
-			return "", err
-		}
-		if len(resp.Choices) > 0 {
-			return resp.Choices[0].Message.Content, nil
-		}
-		return "", fmt.Errorf("no choices in response")
 	}
 }

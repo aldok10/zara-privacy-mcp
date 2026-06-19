@@ -43,6 +43,15 @@ func (d *PIIDetector) registerBuiltin() {
 		// Address patterns (basic)
 		{Name: "Postal Code Indonesia", Regex: `\b[1-9][0-9]{4}\b`, Risk: RiskLow, Locales: []string{"id"}},
 		{Name: "Postal Code Singapore", Regex: `\b[0-9]{6}\b`, Risk: RiskLow, Locales: []string{"sg"}},
+
+		// US
+		{Name: "US SSN", Regex: `\b[0-9]{3}-[0-9]{2}-[0-9]{4}\b`, Risk: RiskHigh, Locales: []string{"us", "global"}},
+
+		// International
+		{Name: "IBAN", Regex: `\b[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}\b`, Risk: RiskHigh, Locales: []string{"global"}},
+
+		// Brazil
+		{Name: "CPF Brazil", Regex: `\b[0-9]{3}\.[0-9]{3}\.[0-9]{3}-[0-9]{2}\b`, Risk: RiskHigh, Locales: []string{"br", "global"}},
 	}
 }
 
@@ -157,14 +166,8 @@ func (d *PIIDetector) ScanWithContext(text string, locales ...string) []Finding 
 // isFalsePositive checks if a finding is likely a false positive.
 func isFalsePositive(f Finding, text string) bool {
 	// Get context around the finding
-	start := f.Position - 20
-	if start < 0 {
-		start = 0
-	}
-	end := f.Position + f.Length + 20
-	if end > len(text) {
-		end = len(text)
-	}
+	start := max(f.Position-20, 0)
+	end := min(f.Position+f.Length+20, len(text))
 	ctx := strings.ToLower(text[start:end])
 
 	// Check if it looks like a year (4 digits, 1900-2099)

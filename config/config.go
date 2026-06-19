@@ -110,7 +110,8 @@ type APIConfig struct {
 type AIProviderConfig struct {
 	Name    string
 	BaseURL string
-	APIKey  string // resolved from env var
+	APIKey  string   // primary key (first resolved)
+	APIKeys []string // all keys (for pool round-robin)
 	Models  []string
 }
 
@@ -327,12 +328,28 @@ func (c *Config) parseAIProviders() {
 		}
 
 		apiKeyEnv := getEnv(prefix+name+"_API_KEY_ENV", "")
-		apiKey := os.Getenv(apiKeyEnv)
+
+		// Support comma-separated env var names for multi-key pools
+		var apiKeys []string
+		for envName := range strings.SplitSeq(apiKeyEnv, ",") {
+			envName = strings.TrimSpace(envName)
+			if envName == "" {
+				continue
+			}
+			if key := os.Getenv(envName); key != "" {
+				apiKeys = append(apiKeys, key)
+			}
+		}
+
+		var primaryKey string
+		if len(apiKeys) > 0 {
+			primaryKey = apiKeys[0]
+		}
 
 		modelsStr := getEnv(prefix+name+"_MODELS", "")
 		var models []string
 		if modelsStr != "" {
-			for _, m := range strings.Split(modelsStr, ",") {
+			for m := range strings.SplitSeq(modelsStr, ",") {
 				m = strings.TrimSpace(m)
 				if m != "" {
 					models = append(models, m)
@@ -343,7 +360,8 @@ func (c *Config) parseAIProviders() {
 		c.AIProviders[name] = AIProviderConfig{
 			Name:    name,
 			BaseURL: strings.TrimRight(baseURL, "/"),
-			APIKey:  apiKey,
+			APIKey:  primaryKey,
+			APIKeys: apiKeys,
 			Models:  models,
 		}
 	}
@@ -396,7 +414,7 @@ func (c *Config) Summary() string {
 
 	b.WriteString(fmt.Sprintf("\nMongoDB (%d):\n", len(c.MongoDBs)))
 	for _, m := range c.MongoDBs {
-		b.WriteString(fmt.Sprintf("  ─ %s → %s/%s\n", m.Name, m.URI, m.Database))
+		b.WriteString(fmt.Sprintf("  ─ %s → %s\n", m.Name, m.Database))
 	}
 
 	b.WriteString(fmt.Sprintf("\nRedis (%d):\n", len(c.RedisDBs)))
@@ -442,4 +460,46 @@ func getEnvBool(key string, fallback bool) bool {
 		}
 	}
 	return fallback
+}
+
+// ─── Validation ─────────────────────────────────────────────────────────────
+
+// Validate checks configuration for common errors.
+// Returns nil if valid, error describing the problem otherwise.
+func (c *Config) Validate() error {
+	if c.Port != "" {
+		p, err := strconv.Atoi(c.Port)
+		if err != nil || p < 1 || p > 65535 {
+			return fmt.Errorf("invalid port: %s", c.Port)
+		}
+	}
+	for name, db := range c.Databases {
+		if db.DSN == "" {
+			return fmt.Errorf("database %s: DSN is empty", name)
+		}
+	}
+	for name, m := range c.MongoDBs {
+		if m.URI == "" {
+			return fmt.Errorf("mongodb %s: URI is empty", name)
+		}
+		if m.Database == "" {
+			return fmt.Errorf("mongodb %s: database name is empty", name)
+		}
+	}
+	for name, r := range c.RedisDBs {
+		if r.Addr == "" {
+			return fmt.Errorf("redis %s: address is empty", name)
+		}
+	}
+	for name, a := range c.APIs {
+		if a.BaseURL == "" {
+			return fmt.Errorf("api %s: URL is empty", name)
+		}
+	}
+	for name, ai := range c.AIProviders {
+		if ai.BaseURL == "" {
+			return fmt.Errorf("ai provider %s: base URL is empty", name)
+		}
+	}
+	return nil
 }

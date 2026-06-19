@@ -4,11 +4,11 @@ package db
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/aldok10/zara-privacy-mcp/internal/detector"
+	"github.com/aldok10/zara-privacy-mcp/internal/masking"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -27,6 +27,7 @@ type MongoDB struct {
 	Config    MongoConfig
 	client    *mongo.Client
 	db        *mongo.Database
+	masker    *masking.Masker
 	secretDet *detector.SecretDetector
 	piiDet    *detector.PIIDetector
 }
@@ -39,11 +40,11 @@ type MongoRegistry struct {
 
 // MongoResult holds the result of a MongoDB operation.
 type MongoResult struct {
-	Documents  []map[string]interface{} `json:"documents,omitempty"`
-	Count      int                      `json:"count,omitempty"`
-	Duration   string                   `json:"duration"`
-	Collection string                   `json:"collection,omitempty"`
-	Masked     []MaskedField            `json:"masked,omitempty"`
+	Documents  []map[string]any `json:"documents,omitempty"`
+	Count      int              `json:"count,omitempty"`
+	Duration   string           `json:"duration"`
+	Collection string           `json:"collection,omitempty"`
+	Masked     []MaskedField    `json:"masked,omitempty"`
 }
 
 // NewMongoRegistry creates an empty MongoDB registry.
@@ -84,6 +85,7 @@ func (r *MongoRegistry) Add(cfg MongoConfig, secretDet *detector.SecretDetector,
 		Config:    cfg,
 		client:    client,
 		db:        client.Database(cfg.Database),
+		masker:    masking.New(secretDet, piiDet),
 		secretDet: secretDet,
 		piiDet:    piiDet,
 	}
@@ -128,7 +130,9 @@ func (r *MongoRegistry) CloseAll() {
 func (m *MongoDB) Find(collection string, filter bson.M, limit int64) (*MongoResult, error) {
 	start := time.Now()
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	opts := options.Find()
 	if limit > 0 {
 		opts.SetLimit(limit)
@@ -140,7 +144,7 @@ func (m *MongoDB) Find(collection string, filter bson.M, limit int64) (*MongoRes
 	}
 	defer cur.Close(ctx)
 
-	var docs []map[string]interface{}
+	var docs []map[string]any
 	var masked []MaskedField
 	rowIdx := 0
 
@@ -150,14 +154,14 @@ func (m *MongoDB) Find(collection string, filter bson.M, limit int64) (*MongoRes
 			continue
 		}
 
-		flat := make(map[string]interface{})
+		flat := make(map[string]any)
 		m.flattenDoc("", doc, flat, &masked, rowIdx)
 		docs = append(docs, flat)
 		rowIdx++
 	}
 
 	if docs == nil {
-		docs = []map[string]interface{}{}
+		docs = []map[string]any{}
 	}
 
 	return &MongoResult{
@@ -181,12 +185,12 @@ func (m *MongoDB) RunCommand(command bson.M) (*MongoResult, error) {
 		return nil, fmt.Errorf("mongo command: %w", err)
 	}
 
-	flat := make(map[string]interface{})
+	flat := make(map[string]any)
 	var masked []MaskedField
 	m.flattenDoc("", doc, flat, &masked, 0)
 
 	return &MongoResult{
-		Documents: []map[string]interface{}{flat},
+		Documents: []map[string]any{flat},
 		Count:     1,
 		Duration:  time.Since(start).Round(time.Microsecond).String(),
 		Masked:    masked,
@@ -209,7 +213,7 @@ func (m *MongoDB) ListCollections() ([]string, error) {
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 // flattenDoc flattens a BSON document into a flat map, masking sensitive values.
-func (m *MongoDB) flattenDoc(prefix string, doc bson.M, out map[string]interface{}, masked *[]MaskedField, rowIdx int) {
+func (m *MongoDB) flattenDoc(prefix string, doc bson.M, out map[string]any, masked *[]MaskedField, rowIdx int) {
 	for key, val := range doc {
 		fullKey := key
 		if prefix != "" {
@@ -219,7 +223,7 @@ func (m *MongoDB) flattenDoc(prefix string, doc bson.M, out map[string]interface
 		switch v := val.(type) {
 		case bson.M:
 			m.flattenDoc(fullKey, v, out, masked, rowIdx)
-		case []interface{}:
+		case []any:
 			out[fullKey] = fmt.Sprintf("%v", v)
 		case string:
 			if v != "" {
@@ -236,43 +240,20 @@ func (m *MongoDB) flattenDoc(prefix string, doc bson.M, out map[string]interface
 }
 
 // maskValue checks a string value for secrets/PII and masks if found.
-func (m *MongoDB) maskValue(val, field string, rowIdx int) (interface{}, []MaskedField) {
-	secrets := m.secretDet.Scan(val)
-	pii := m.piiDet.ScanWithContext(val)
-
-	if len(secrets) == 0 && len(pii) == 0 {
+func (m *MongoDB) maskValue(val, field string, rowIdx int) (any, []MaskedField) {
+	masked, findings := m.masker.MaskString(val)
+	if len(findings) == 0 {
 		return val, nil
 	}
 
-	var masked []MaskedField
-	maskedVal := val
-
-	for _, s := range secrets {
-		maskedVal = replaceOnce(maskedVal, s.Value, detector.MaskSecret(s.Value))
-		masked = append(masked, MaskedField{
+	var fields []MaskedField
+	for _, f := range findings {
+		fields = append(fields, MaskedField{
 			Column: field,
 			Row:    rowIdx,
-			Type:   s.Type,
-			Risk:   int(s.Risk),
+			Type:   f.Type,
+			Risk:   int(f.Risk),
 		})
 	}
-	for _, p := range pii {
-		maskedVal = replaceOnce(maskedVal, p.Value, detector.MaskSecret(p.Value))
-		masked = append(masked, MaskedField{
-			Column: field,
-			Row:    rowIdx,
-			Type:   p.Type,
-			Risk:   int(p.Risk),
-		})
-	}
-
-	return maskedVal, masked
-}
-
-// replaceOnce replaces only the first occurrence of old with new.
-func replaceOnce(s, old, new string) string {
-	if idx := strings.Index(s, old); idx >= 0 {
-		return s[:idx] + new + s[idx+len(old):]
-	}
-	return s
+	return masked, fields
 }

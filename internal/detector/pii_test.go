@@ -8,68 +8,68 @@ func TestPIIDetection(t *testing.T) {
 	det := NewPIIDetector()
 
 	tests := []struct {
-		name     string
-		input    string
-		locales  []string
+		name        string
+		input       string
+		locales     []string
 		minFindings int
 	}{
 		{
-			name:     "Email address",
-			input:    "Contact me at user@example.com for questions",
+			name:        "Email address",
+			input:       "Contact me at user@example.com for questions",
 			minFindings: 1,
 		},
 		{
-			name:     "Indonesian NIK (KTP)",
-			input:    "NIK saya 3172051234567890",
+			name:        "Indonesian NIK (KTP)",
+			input:       "NIK saya 3172051234567890",
 			minFindings: 1,
 		},
 		{
-			name:     "Indonesian NPWP",
-			input:    "NPWP: 12.345.678.9-012.345",
+			name:        "Indonesian NPWP",
+			input:       "NPWP: 12.345.678.9-012.345",
 			minFindings: 1,
 		},
 		{
-			name:     "Indonesian phone",
-			input:    "Hubungi 081234567890",
-			locales:  []string{"id"},
+			name:        "Indonesian phone",
+			input:       "Hubungi 081234567890",
+			locales:     []string{"id"},
 			minFindings: 1,
 		},
 		{
-			name:     "Singapore NRIC",
-			input:    "My NRIC is S1234567A",
-			locales:  []string{"sg"},
+			name:        "Singapore NRIC",
+			input:       "My NRIC is S1234567A",
+			locales:     []string{"sg"},
 			minFindings: 1,
 		},
 		{
-			name:     "Singapore phone",
-			input:    "Call me at +6591234567",
-			locales:  []string{"sg"},
+			name:        "Singapore phone",
+			input:       "Call me at +6591234567",
+			locales:     []string{"sg"},
 			minFindings: 1,
 		},
 		{
-			name:     "Credit card number",
-			input:    "My card is 4111111111111111",
+			name:        "Credit card number",
+			input:       "My card is 4111111111111111",
 			minFindings: 1,
 		},
 		{
-			name:     "IP address",
-			input:    "Server IP is 192.168.1.1 (internal, should be filtered)",
+			name:        "IP address",
+			input:       "Server IP is 192.168.1.1 (internal, should be filtered)",
 			minFindings: 0, // Should filter private IP
 		},
 		{
-			name:     "Public IP address",
-			input:    "Server IP is 203.0.113.42",
+			name:        "Public IP address",
+			input:       "Server IP is 203.0.113.42",
 			minFindings: 1,
 		},
 		{
-			name:     "Clean text no PII",
-			input:    "Hello, this is a conversation about software engineering.",
+			name:        "Clean text no PII",
+			input:       "Hello, this is a conversation about software engineering.",
 			minFindings: 0,
 		},
 		{
-			name:  "Multiple PII",
-			input: "User: aldo@email.com, Phone: 081234567890, KTP: 3172051234567890",
-			locales:  []string{"id", "global"},
+			name:        "Multiple PII",
+			input:       "User: aldo@email.com, Phone: 081234567890, KTP: 3172051234567890",
+			locales:     []string{"id", "global"},
 			minFindings: 3,
 		},
 	}

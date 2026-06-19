@@ -1,6 +1,7 @@
 package db
 
 import (
+	"slices"
 	"testing"
 )
 
@@ -8,10 +9,10 @@ import (
 
 func TestResolveDriver(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    string
-		want     string
-		wantOK   bool
+		name   string
+		input  string
+		want   string
+		wantOK bool
 	}{
 		{"postgres canonical", "postgres", "postgres", true},
 		{"pg alias", "pg", "postgres", true},
@@ -106,13 +107,7 @@ func TestSupportedDrivers(t *testing.T) {
 	// Verify all core drivers are present
 	required := []string{"postgres", "mysql", "sqlite", "sqlserver", "oracle", "clickhouse"}
 	for _, r := range required {
-		found := false
-		for _, d := range drivers {
-			if d == r {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(drivers, r)
 		if !found {
 			t.Errorf("Required driver %q not found in SupportedDrivers(): %v", r, drivers)
 		}

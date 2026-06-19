@@ -5,6 +5,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"maps"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -96,11 +100,11 @@ func (s *MappingStore) loadFromDB() {
 // GetOrCreate returns an existing placeholder for a value, or creates a new one.
 func (s *MappingStore) GetOrCreate(original string, mtype string) detector.Mapping {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	// Check if already mapped
 	for _, m := range s.inMemory {
 		if m.Original == original {
+			s.mu.Unlock()
 			return m
 		}
 	}
@@ -116,9 +120,10 @@ func (s *MappingStore) GetOrCreate(original string, mtype string) detector.Mappi
 		Type:        mtype,
 	}
 	s.inMemory[placeholder] = mapping
+	s.mu.Unlock()
 
-	// Persist encrypted
-	go s.persistMapping(mapping)
+	// Persist outside lock — SQLite handles its own concurrency
+	s.persistMapping(mapping)
 
 	return mapping
 }
@@ -185,9 +190,7 @@ func (s *MappingStore) RestoreFromSnapshot(encrypted string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	for k, v := range mappings {
-		s.inMemory[k] = v
-	}
+	maps.Copy(s.inMemory, mappings)
 
 	return nil
 }
@@ -195,13 +198,16 @@ func (s *MappingStore) RestoreFromSnapshot(encrypted string) error {
 func (s *MappingStore) persistMapping(m detector.Mapping) {
 	encrypted, err := s.enc.EncryptString(m.Original)
 	if err != nil {
+		slog.New(slog.NewTextHandler(os.Stderr, nil)).Warn("persistMapping encrypt failed")
 		return
 	}
 
-	_, _ = s.db.Exec(
+	if _, err := s.db.Exec(
 		"INSERT OR REPLACE INTO mappings (placeholder, original_encrypted, type, accessed_at) VALUES (?, ?, ?, ?)",
 		m.Placeholder, encrypted, m.Type, time.Now().UTC(),
-	)
+	); err != nil {
+		slog.New(slog.NewTextHandler(os.Stderr, nil)).Warn("persistMapping write failed")
+	}
 }
 
 // Close closes the database connection.
@@ -212,50 +218,37 @@ func (s *MappingStore) Close() error {
 // placeholderLabel returns a readable label for a detection type.
 func placeholderLabel(mtype string) string {
 	switch {
-	case contains(mtype, "Email"):
+	case strings.Contains(mtype, "Email"):
 		return "EMAIL"
-	case contains(mtype, "Phone"):
+	case strings.Contains(mtype, "Phone"):
 		return "PHONE"
-	case contains(mtype, "Credit Card"):
+	case strings.Contains(mtype, "Credit Card"):
 		return "CC"
-	case contains(mtype, "KTP") || contains(mtype, "NIK"):
+	case strings.Contains(mtype, "KTP") || strings.Contains(mtype, "NIK"):
 		return "NIK"
-	case contains(mtype, "NPWP"):
+	case strings.Contains(mtype, "NPWP"):
 		return "NPWP"
-	case contains(mtype, "Passport"):
+	case strings.Contains(mtype, "Passport"):
 		return "PASSPORT"
-	case contains(mtype, "NRIC"):
+	case strings.Contains(mtype, "NRIC"):
 		return "NRIC"
-	case contains(mtype, "API Key"):
+	case strings.Contains(mtype, "API Key"):
 		return "API_KEY"
-	case contains(mtype, "JWT"):
+	case strings.Contains(mtype, "JWT"):
 		return "JWT"
-	case contains(mtype, "Token"):
+	case strings.Contains(mtype, "Token"):
 		return "TOKEN"
-	case contains(mtype, "Key"):
+	case strings.Contains(mtype, "Key"):
 		return "KEY"
-	case contains(mtype, "Private Key"):
+	case strings.Contains(mtype, "Private Key"):
 		return "PKEY"
-	case contains(mtype, "URL"):
+	case strings.Contains(mtype, "URL"):
 		return "URL"
-	case contains(mtype, "Database"):
+	case strings.Contains(mtype, "Database"):
 		return "DB"
-	case contains(mtype, "IP"):
+	case strings.Contains(mtype, "IP"):
 		return "IP"
 	default:
 		return "REDACTED"
 	}
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && len(substr) > 0 && searchString(s, substr))
-}
-
-func searchString(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }

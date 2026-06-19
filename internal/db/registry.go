@@ -4,6 +4,7 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/aldok10/zara-privacy-mcp/internal/detector"
+	"github.com/aldok10/zara-privacy-mcp/internal/masking"
 
 	// Register database/sql drivers
 	_ "github.com/ClickHouse/clickhouse-go/v2"
@@ -31,6 +33,7 @@ type Registry struct {
 type DB struct {
 	Config    Config
 	db        *sql.DB
+	masker    *masking.Masker
 	secretDet *detector.SecretDetector
 	piiDet    *detector.PIIDetector
 }
@@ -61,7 +64,9 @@ var supportedDrivers = []DriverInfo{
 	{
 		DriverName: "postgres",
 		Aliases:    []string{"pg", "postgresql"},
-		DetectDSN:  func(dsn string) bool { return strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") },
+		DetectDSN: func(dsn string) bool {
+			return strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://")
+		},
 	},
 	{
 		DriverName: "mysql",
@@ -160,11 +165,11 @@ func SupportedDrivers() []string {
 
 // QueryResult holds the result of a query with optional masking metadata.
 type QueryResult struct {
-	Columns      []string                 `json:"columns"`
-	Rows         []map[string]interface{} `json:"rows"`
-	RowsAffected int64                    `json:"rows_affected,omitempty"`
-	Duration     string                   `json:"duration"`
-	Masked       []MaskedField            `json:"masked,omitempty"`
+	Columns      []string         `json:"columns"`
+	Rows         []map[string]any `json:"rows"`
+	RowsAffected int64            `json:"rows_affected,omitempty"`
+	Duration     string           `json:"duration"`
+	Masked       []MaskedField    `json:"masked,omitempty"`
 }
 
 // MaskedField describes a field that was masked in the result.
@@ -208,6 +213,7 @@ func (r *Registry) Add(cfg Config, secretDet *detector.SecretDetector, piiDet *d
 	r.conns[cfg.Name] = &DB{
 		Config:    cfg,
 		db:        db,
+		masker:    masking.New(secretDet, piiDet),
 		secretDet: secretDet,
 		piiDet:    piiDet,
 	}
@@ -267,10 +273,7 @@ func (r *Registry) open(cfg Config) (*sql.DB, error) {
 	}
 	maxIdle := cfg.MaxIdleConns
 	if maxIdle <= 0 {
-		maxIdle = maxOpen / 2
-		if maxIdle < 2 {
-			maxIdle = 2
-		}
+		maxIdle = max(maxOpen/2, 2)
 	}
 	connMaxLifetime := cfg.ConnMaxLifetime
 	if connMaxLifetime <= 0 {
@@ -317,7 +320,7 @@ func (d *DB) driverDialect() string {
 
 // placeholders returns SQL parameter placeholders for the driver's dialect.
 // postgres: $1, $2  |  mysql/sqlite/clickhouse: ?, ?  |  sqlserver: @p1, @p2  |  oracle: :1, :2
-func (d *DB) placeholders(args []interface{}) string {
+func (d *DB) placeholders(args []any) string {
 	if len(args) == 0 {
 		return ""
 	}
@@ -342,10 +345,13 @@ func (d *DB) placeholders(args []interface{}) string {
 // ─── Query Execution ────────────────────────────────────────────────────────
 
 // Query runs a SELECT query and returns masked results.
-func (d *DB) Query(query string, args ...interface{}) (*QueryResult, error) {
+func (d *DB) Query(query string, args ...any) (*QueryResult, error) {
 	start := time.Now()
 
-	rows, err := d.db.Query(query, args...)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	rows, err := d.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query: %w", err)
 	}
@@ -356,13 +362,13 @@ func (d *DB) Query(query string, args ...interface{}) (*QueryResult, error) {
 		return nil, fmt.Errorf("columns: %w", err)
 	}
 
-	var result []map[string]interface{}
+	var result []map[string]any
 	var masked []MaskedField
 	rowIdx := 0
 
 	for rows.Next() {
-		values := make([]interface{}, len(columns))
-		valuePtrs := make([]interface{}, len(columns))
+		values := make([]any, len(columns))
+		valuePtrs := make([]any, len(columns))
 		for i := range values {
 			valuePtrs[i] = &values[i]
 		}
@@ -371,7 +377,7 @@ func (d *DB) Query(query string, args ...interface{}) (*QueryResult, error) {
 			return nil, fmt.Errorf("scan: %w", err)
 		}
 
-		row := make(map[string]interface{})
+		row := make(map[string]any)
 		for i, col := range columns {
 			val := values[i]
 			if b, ok := val.([]byte); ok {
@@ -395,7 +401,7 @@ func (d *DB) Query(query string, args ...interface{}) (*QueryResult, error) {
 	}
 
 	if result == nil {
-		result = []map[string]interface{}{} // empty, not null
+		result = []map[string]any{} // empty, not null
 	}
 
 	return &QueryResult{
@@ -407,10 +413,13 @@ func (d *DB) Query(query string, args ...interface{}) (*QueryResult, error) {
 }
 
 // Exec runs a non-SELECT query (INSERT, UPDATE, DELETE).
-func (d *DB) Exec(query string, args ...interface{}) (*QueryResult, error) {
+func (d *DB) Exec(query string, args ...any) (*QueryResult, error) {
 	start := time.Now()
 
-	result, err := d.db.Exec(query, args...)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	result, err := d.db.ExecContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("exec: %w", err)
 	}
@@ -419,7 +428,7 @@ func (d *DB) Exec(query string, args ...interface{}) (*QueryResult, error) {
 
 	return &QueryResult{
 		Columns:      []string{},
-		Rows:         []map[string]interface{}{},
+		Rows:         []map[string]any{},
 		RowsAffected: rowsAffected,
 		Duration:     time.Since(start).Round(time.Microsecond).String(),
 	}, nil
@@ -680,37 +689,22 @@ func (d *DB) describeClickHouse(table string) ([]ColumnInfo, error) {
 // ─── Masking ────────────────────────────────────────────────────────────────
 
 // maskValue checks a single cell value for secrets/PII and masks if found.
-func (d *DB) maskValue(val, column string, rowIdx int) (interface{}, []MaskedField) {
-	secrets := d.secretDet.Scan(val)
-	pii := d.piiDet.ScanWithContext(val)
-
-	if len(secrets) == 0 && len(pii) == 0 {
+func (d *DB) maskValue(val, column string, rowIdx int) (any, []MaskedField) {
+	masked, findings := d.masker.MaskString(val)
+	if len(findings) == 0 {
 		return val, nil
 	}
 
-	var masked []MaskedField
-	maskedVal := val
-
-	for _, s := range secrets {
-		maskedVal = strings.Replace(maskedVal, s.Value, detector.MaskSecret(s.Value), 1)
-		masked = append(masked, MaskedField{
+	var fields []MaskedField
+	for _, f := range findings {
+		fields = append(fields, MaskedField{
 			Column: column,
 			Row:    rowIdx,
-			Type:   s.Type,
-			Risk:   int(s.Risk),
+			Type:   f.Type,
+			Risk:   int(f.Risk),
 		})
 	}
-	for _, p := range pii {
-		maskedVal = strings.Replace(maskedVal, p.Value, detector.MaskSecret(p.Value), 1)
-		masked = append(masked, MaskedField{
-			Column: column,
-			Row:    rowIdx,
-			Type:   p.Type,
-			Risk:   int(p.Risk),
-		})
-	}
-
-	return maskedVal, masked
+	return masked, fields
 }
 
 // sanitizeName safely quotes a table/column name.

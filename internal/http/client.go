@@ -13,16 +13,19 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/aldok10/zara-privacy-mcp/internal/detector"
+	"github.com/aldok10/zara-privacy-mcp/internal/masking"
 )
 
 // Registry manages configured API endpoints.
 type Registry struct {
-	apis     map[string]APIConfig
-	client   *http.Client
+	apis      map[string]APIConfig
+	client    *http.Client
+	masker    *masking.Masker
 	secretDet *detector.SecretDetector
 	piiDet    *detector.PIIDetector
 }
@@ -47,11 +50,11 @@ type Request struct {
 
 // Response from the API proxy.
 type Response struct {
-	StatusCode int                 `json:"status_code"`
-	Headers    map[string]string   `json:"headers,omitempty"`
-	Body       string              `json:"body"`
-	Duration   string              `json:"duration"`
-	Masked     []detector.Finding  `json:"masked,omitempty"`
+	StatusCode int                `json:"status_code"`
+	Headers    map[string]string  `json:"headers,omitempty"`
+	Body       string             `json:"body"`
+	Duration   string             `json:"duration"`
+	Masked     []detector.Finding `json:"masked,omitempty"`
 }
 
 // NewRegistry creates an API registry with the given configurations.
@@ -59,6 +62,7 @@ func NewRegistry(secretDet *detector.SecretDetector, piiDet *detector.PIIDetecto
 	return &Registry{
 		apis:      make(map[string]APIConfig),
 		client:    &http.Client{Timeout: 30 * time.Second},
+		masker:    masking.New(secretDet, piiDet),
 		secretDet: secretDet,
 		piiDet:    piiDet,
 	}
@@ -140,10 +144,41 @@ func (r *Registry) Do(apiName string, req Request) (*Response, error) {
 		httpReq.Header.Set("Content-Type", "application/json")
 	}
 
-	// Execute
-	httpResp, err := r.client.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("request failed")
+	// Execute with retry (max 3 attempts for transient errors)
+	var httpResp *http.Response
+	maxRetries := 3
+	for attempt := range maxRetries {
+		httpResp, err = r.client.Do(httpReq)
+		if err == nil && httpResp.StatusCode < 500 {
+			break
+		}
+		if httpResp != nil {
+			httpResp.Body.Close()
+		}
+		if attempt == maxRetries-1 {
+			if err != nil {
+				return nil, fmt.Errorf("request failed after %d attempts", maxRetries)
+			}
+			break // use last 5xx response
+		}
+		// Exponential backoff: 100ms, 200ms
+		time.Sleep(time.Duration(100*(attempt+1)) * time.Millisecond)
+
+		// Rebuild request for retry (body needs to be re-readable)
+		if len(req.Body) > 0 {
+			bodyReader = bytes.NewReader(req.Body)
+		}
+		httpReq, _ = http.NewRequestWithContext(ctx, strings.ToUpper(req.Method), fullURL, bodyReader)
+		r.applyAuth(cfg, httpReq)
+		for k, v := range cfg.Headers {
+			httpReq.Header.Set(k, v)
+		}
+		for k, v := range req.Headers {
+			httpReq.Header.Set(k, v)
+		}
+		if len(req.Body) > 0 {
+			httpReq.Header.Set("Content-Type", "application/json")
+		}
 	}
 	defer httpResp.Body.Close()
 
@@ -200,30 +235,20 @@ func (r *Registry) applyAuth(cfg APIConfig, req *http.Request) {
 }
 
 func (r *Registry) maskResponse(body *string) []detector.Finding {
-	secrets := r.secretDet.Scan(*body)
-	pii := r.piiDet.ScanWithContext(*body)
-
-	var all []detector.Finding
-	all = append(all, secrets...)
-	all = append(all, pii...)
-
-	if len(all) == 0 {
-		return nil
+	masked, findings := r.masker.MaskString(*body)
+	if len(findings) > 0 {
+		*body = masked
 	}
-
-	masked := *body
-	for _, f := range all {
-		masked = strings.Replace(masked, f.Value, detector.MaskSecret(f.Value), 1)
-	}
-	*body = masked
-
-	return all
+	return findings
 }
 
 // validateURL blocks requests to internal/private networks (SSRF prevention).
 func validateURL(rawURL string) error {
+	if rawURL == "" {
+		return fmt.Errorf("invalid URL")
+	}
 	parsed, err := url.Parse(rawURL)
-	if err != nil {
+	if err != nil || parsed.Host == "" {
 		return fmt.Errorf("invalid URL")
 	}
 
@@ -234,8 +259,19 @@ func validateURL(rawURL string) error {
 
 	host := parsed.Hostname()
 
-	// Block cloud metadata endpoints
-	if host == "169.254.169.254" || host == "100.100.100.200" || host == "metadata.google.internal" {
+	// Block known internal hostnames
+	blockedHosts := []string{"localhost", "metadata.google.internal", "kubernetes.default.svc", "instance-data.ec2.internal"}
+	if slices.Contains(blockedHosts, host) {
+		return fmt.Errorf("blocked: internal hostname")
+	}
+	// Block any *.internal suffix
+	if strings.HasSuffix(host, ".internal") {
+		return fmt.Errorf("blocked: internal hostname")
+	}
+
+	// Block cloud metadata endpoints (AWS, GCP, Alibaba, ECS)
+	blockedIPs := []string{"169.254.169.254", "100.100.100.200", "169.254.170.2", "fd00:ec2::254"}
+	if slices.Contains(blockedIPs, host) {
 		return fmt.Errorf("blocked: cloud metadata endpoint")
 	}
 

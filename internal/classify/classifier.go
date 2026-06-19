@@ -18,12 +18,12 @@ type Classifier struct {
 
 // ClassificationRule defines a rule for classifying data.
 type ClassificationRule struct {
-	Name         string
-	Description  string
-	MatchAny     []string
-	MatchAll     []string
+	Name           string
+	Description    string
+	MatchAny       []string
+	MatchAll       []string
 	Classification detector.Classification
-	Priority     int
+	Priority       int
 }
 
 // NewClassifier creates a classifier with default rules.
@@ -36,9 +36,9 @@ func NewClassifier() *Classifier {
 // ClassifyResult is the output of classification.
 type ClassifyResult struct {
 	Classification detector.Classification `json:"classification"`
-	Rule           string                   `json:"rule,omitempty"`
-	Confidence     float64                  `json:"confidence"`
-	Matches        []string                 `json:"matches,omitempty"`
+	Rule           string                  `json:"rule,omitempty"`
+	Confidence     float64                 `json:"confidence"`
+	Matches        []string                `json:"matches,omitempty"`
 }
 
 // Classify assigns a classification to the given text.
