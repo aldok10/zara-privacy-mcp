@@ -17,6 +17,7 @@ import (
 	"github.com/aldok10/zara-privacy-mcp/internal/engine"
 	httpproxy "github.com/aldok10/zara-privacy-mcp/internal/http"
 	"github.com/aldok10/zara-privacy-mcp/internal/store"
+	"github.com/aldok10/zara-privacy-mcp/internal/version"
 )
 
 // Handlers holds all MCP tool handler methods.
@@ -536,6 +537,14 @@ func (h *Handlers) ConfigList(ctx context.Context, req mcp.CallToolRequest) (*mc
 		"databases":    databases,
 		"apis":         apis,
 		"ai_providers": aiProvs,
+	})
+}
+
+func (h *Handlers) Version(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return jsonResult(map[string]interface{}{
+		"version": version.Version,
+		"commit":  version.Commit,
+		"date":    version.Date,
 	})
 }
 

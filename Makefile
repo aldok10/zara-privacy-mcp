@@ -35,6 +35,9 @@ build-linux:
 build-darwin:
 	GOOS=darwin GOARCH=arm64 $(GO) build $(GOFLAGS) -o $(BINARY)-darwin-arm64 ./cmd/server/
 
+build-windows:
+	GOOS=windows GOARCH=amd64 $(GO) build $(GOFLAGS) -o $(BINARY)-windows-amd64.exe ./cmd/server/
+
 # ─── Run ──────────────────────────────────────────────────────────────────────
 
 run: build

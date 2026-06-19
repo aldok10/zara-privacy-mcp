@@ -1,11 +1,11 @@
 ---
 name: zara-privacy-mcp
-description: Zara Privacy MCP skill — 19 tools for privacy scanning, database proxy (SQL/MongoDB/Redis), HTTP API proxy, and AI provider proxy. All with automatic data masking.
+description: Zara Privacy MCP skill — 21 tools for privacy scanning, database proxy (SQL/MongoDB/Redis), HTTP API proxy, AI provider proxy with fallback routing, and version info. All with automatic data masking.
 ---
 
 # Zara Privacy MCP
 
-Privacy-first MCP gateway with 19 tools. All outbound calls through MCP are automatically scanned and masked — secrets, PII, credentials never leak.
+Privacy-first MCP gateway with 21 tools. All outbound calls through MCP are automatically scanned and masked — secrets, PII, credentials never leak.
 
 ```
 Agent → MCP → DB/HTTP/AI call → auto-mask → Agent
@@ -13,7 +13,7 @@ Agent → MCP → DB/HTTP/AI call → auto-mask → Agent
 
 ---
 
-## 19 Tools
+## 21 Tools
 
 ### Privacy (7 tools, always available)
 
@@ -59,26 +59,29 @@ Driver auto-detected from DSN — no need to set `_DRIVER`.
 | `http_request` | Make HTTP call with auto-injected auth. Response auto-masked. Params: `api`, `path`, `method`, `headers`, `body`, `timeout`. |
 | `http_list_apis` | List configured API endpoints. |
 
-### AI Provider (2 tools)
+### AI Provider (3 tools)
 
 Supports: OpenAI, Anthropic, Gemini, DeepSeek, OpenRouter, Groq, any OpenAI-compatible.
+9 free providers pre-registered as fallback. Auto-fallback routing + quota tracking + RTK compression.
 
 | Tool | When to Use |
 |------|-------------|
-| `ai_chat` | Send prompt to LLM. Auto-redacts before send, auto-unredacts response. |
+| `ai_chat` | Send prompt to LLM. Auto-redacts before send, auto-unredacts response. Auto-fallback if provider fails. |
 | `ai_list_providers` | List configured providers + models. |
+| `ai_quota_status` | Show token usage per provider + remaining quota. |
 
-### Config (1 tool)
+### Config & Info (2 tools)
 
 | Tool | When to Use |
 |------|-------------|
 | `config_list` | Show all active connections (databases, APIs, AI providers) without exposing secrets. |
+| `version` | Show server version, commit hash, and build date. |
 
 ---
 
 ## Detection Capabilities
 
-### Secrets (21 patterns)
+### Secrets (24 patterns)
 
 - AI keys: OpenAI (`sk-proj-*`, legacy), Anthropic (`sk-ant-*`), Gemini (`AIza*`), DeepSeek
 - Cloud: AWS Access Key (`AKIA*`), AWS Secret Key
@@ -88,11 +91,12 @@ Supports: OpenAI, Anthropic, Gemini, DeepSeek, OpenRouter, Groq, any OpenAI-comp
 - URLs with embedded credentials
 - High-entropy generic strings (Shannon entropy > 4.0)
 
-### PII (15 patterns)
+### PII (18 patterns)
 
-- **Global**: Email, Phone, Credit Card (Visa/MC/Amex/Discover), IP Address
+- **Global**: Email, Phone, Credit Card (Visa/MC/Amex/Discover), IP Address, US SSN, IBAN
 - **Indonesia**: NIK/KTP, NPWP, Passport, Phone (+62), SIM, Postal Code
 - **Singapore**: NRIC, FIN, Phone (+65), Passport, Postal Code
+- **Brazil**: CPF
 
 ---
 

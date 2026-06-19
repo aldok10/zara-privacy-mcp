@@ -25,6 +25,25 @@ jobs:
   release:
     needs: test
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.semrel.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Semantic Release (create tag)
+        id: semrel
+        uses: go-semantic-release/action@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          changelog-generator-opt: "emojis=true"
+          allow-initial-development-versions: true
+
+  build:
+    needs: release
+    if: needs.release.outputs.version != ''
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -34,18 +53,20 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Build binaries
+      - name: Build all platforms
+        env:
+          VERSION: v${{ needs.release.outputs.version }}
         run: |
           make build
           make build-linux
           make build-darwin
+          make build-windows
 
-      - name: Semantic Release
-        uses: go-semantic-release/action@v1
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          changelog-generator-opt: "emojis=true"
-          asset: |
-            zara-privacy-mcp
-            zara-privacy-mcp-linux-amd64
-            zara-privacy-mcp-darwin-arm64
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "v${{ needs.release.outputs.version }}" \
+            zara-privacy-mcp-linux-amd64 \
+            zara-privacy-mcp-darwin-arm64 \
+            zara-privacy-mcp-windows-amd64.exe

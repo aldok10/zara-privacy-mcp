@@ -251,6 +251,13 @@ func registerConfigTools(s *server.MCPServer, h *tools.Handlers) {
 		),
 		h.ConfigList,
 	)
+
+	s.AddTool(
+		mcp.NewTool("version",
+			mcp.WithDescription("Show server version, build commit, and build date."),
+		),
+		h.Version,
+	)
 }
 
 // ─── Middleware ──────────────────────────────────────────────────────────────

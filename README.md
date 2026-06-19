@@ -34,10 +34,37 @@ Your AI Agent
 
 ### Prerequisites
 
-- Go 1.21+ installed
+- Go 1.21+ installed (for building from source)
 - An MCP client (OpenCode, Kiro, Claude Code, or any MCP-compatible tool)
 
-### 1. Clone and build
+### Installation Options
+
+**Option A: go install (recommended)**
+
+```bash
+go install github.com/aldok10/zara-privacy-mcp/cmd/server@latest
+# Binary is installed to $GOPATH/bin/server — rename it:
+mv $(go env GOPATH)/bin/server $(go env GOPATH)/bin/zara-privacy-mcp
+```
+
+**Option B: Download from GitHub Releases**
+
+Download the latest pre-built binary for your OS:
+
+| OS | Architecture | Download |
+|----|-------------|----------|
+| Linux | amd64 | [zara-privacy-mcp-linux-amd64](https://github.com/aldok10/zara-privacy-mcp/releases/latest) |
+| macOS | arm64 (Apple Silicon) | [zara-privacy-mcp-darwin-arm64](https://github.com/aldok10/zara-privacy-mcp/releases/latest) |
+| Windows | amd64 | [zara-privacy-mcp-windows-amd64.exe](https://github.com/aldok10/zara-privacy-mcp/releases/latest) |
+
+```bash
+# Example: Linux
+curl -Lo zara-privacy-mcp https://github.com/aldok10/zara-privacy-mcp/releases/latest/download/zara-privacy-mcp-linux-amd64
+chmod +x zara-privacy-mcp
+sudo mv zara-privacy-mcp /usr/local/bin/
+```
+
+**Option C: Build from source**
 
 ```bash
 git clone https://github.com/aldok10/zara-privacy-mcp.git
