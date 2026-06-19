@@ -318,30 +318,6 @@ func (d *DB) driverDialect() string {
 	}
 }
 
-// placeholders returns SQL parameter placeholders for the driver's dialect.
-// postgres: $1, $2  |  mysql/sqlite/clickhouse: ?, ?  |  sqlserver: @p1, @p2  |  oracle: :1, :2
-func (d *DB) placeholders(args []any) string {
-	if len(args) == 0 {
-		return ""
-	}
-
-	dialect := d.driverDialect()
-	var phs []string
-	for i := range args {
-		switch dialect {
-		case "postgres":
-			phs = append(phs, fmt.Sprintf("$%d", i+1))
-		case "sqlserver":
-			phs = append(phs, fmt.Sprintf("@p%d", i+1))
-		case "oracle":
-			phs = append(phs, fmt.Sprintf(":%d", i+1))
-		default: // mysql, sqlite, clickhouse
-			phs = append(phs, "?")
-		}
-	}
-	return strings.Join(phs, ", ")
-}
-
 // ─── Query Execution ────────────────────────────────────────────────────────
 
 // Query runs a SELECT query and returns masked results.
@@ -389,9 +365,7 @@ func (d *DB) Query(query string, args ...any) (*QueryResult, error) {
 			if isStr && strVal != "" {
 				maskedVal, found := d.maskValue(strVal, col, rowIdx)
 				row[col] = maskedVal
-				for _, m := range found {
-					masked = append(masked, m)
-				}
+				masked = append(masked, found...)
 			} else {
 				row[col] = val
 			}

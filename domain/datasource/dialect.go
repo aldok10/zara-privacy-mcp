@@ -1,7 +1,5 @@
 package datasource
 
-import "fmt"
-
 type Dialect interface {
 	ListTablesQuery() string
 	DescribeTableQuery(table string) (query string, params []any)
@@ -64,12 +62,12 @@ func (sqlserverDialect) ListTablesQuery() string {
 }
 
 func (sqlserverDialect) DescribeTableQuery(table string) (string, []any) {
-	return fmt.Sprintf(`SELECT column_name, data_type, is_nullable,
+	return `SELECT column_name, data_type, is_nullable,
 		COALESCE(CAST(character_maximum_length AS varchar), '') AS max_len,
 		COALESCE(column_default, '') AS col_default
 		FROM information_schema.columns
 		WHERE table_name = @p1
-		ORDER BY ordinal_position`), []any{table}
+		ORDER BY ordinal_position`, []any{table}
 }
 
 func (sqliteDialect) ListTablesQuery() string {

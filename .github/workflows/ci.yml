@@ -10,9 +10,9 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 
@@ -43,6 +43,9 @@ jobs:
 
       - name: Smoke test
         run: |
-          echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
-            | ZARA_ENCRYPTION_KEY="ci-test-key-32-bytes-long-minimum!!" ./zara-privacy-mcp --stdio 2>/dev/null \
-            | python3 -c "import sys,json; d=json.load(sys.stdin); assert len(d['result']['tools']) == 21, f'Expected 21 tools, got {len(d[\"result\"][\"tools\"])}'"
+          RESULT=$(echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
+            | timeout 10 ./zara-privacy-mcp --stdio 2>/dev/null \
+            | head -n 1)
+          echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); assert len(d['result']['tools']) == 21, f'Expected 21 tools, got {len(d[\"result\"][\"tools\"])}'"
+        env:
+          ZARA_ENCRYPTION_KEY: "ci-test-key-32-bytes-long-minimum!!"
