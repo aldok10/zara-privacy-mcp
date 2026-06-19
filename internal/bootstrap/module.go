@@ -6,11 +6,11 @@ import (
 	"go.uber.org/fx"
 
 	"github.com/aldok10/zara-privacy-mcp/internal/ai"
+	"github.com/aldok10/zara-privacy-mcp/internal/audit"
 	"github.com/aldok10/zara-privacy-mcp/internal/classify"
 	"github.com/aldok10/zara-privacy-mcp/internal/compress"
 	"github.com/aldok10/zara-privacy-mcp/internal/db"
 	"github.com/aldok10/zara-privacy-mcp/internal/detector"
-	"github.com/aldok10/zara-privacy-mcp/internal/audit"
 	"github.com/aldok10/zara-privacy-mcp/internal/engine"
 	httpproxy "github.com/aldok10/zara-privacy-mcp/internal/http"
 	"github.com/aldok10/zara-privacy-mcp/internal/observe"

@@ -32,10 +32,10 @@ func TestNew(t *testing.T) {
 
 func TestLogBlocked(t *testing.T) {
 	tests := []struct {
-		name       string
-		tool       string
-		reason     string
-		wantInLog  []string
+		name      string
+		tool      string
+		reason    string
+		wantInLog []string
 	}{
 		{
 			name:      "db_query blocked",

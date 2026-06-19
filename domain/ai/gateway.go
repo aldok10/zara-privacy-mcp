@@ -25,7 +25,7 @@ func DefaultPolicy() GatewayPolicy {
 	return GatewayPolicy{
 		RedactInput:  true,
 		ScanOutput:   true,
-		BlockOnLeak:  false, // log only by default, don't break flow
+		BlockOnLeak:  false,      // log only by default, don't break flow
 		MaxInputSize: 512 * 1024, // 512KB
 	}
 }
@@ -35,9 +35,9 @@ type GatewayEvent struct {
 	Direction     ScanDirection
 	Provider      string
 	Model         string
-	RedactedCount int    // how many fields were redacted in input
-	LeakedCount   int    // how many PII found in output (not from input)
-	Blocked       bool   // whether the response was blocked
+	RedactedCount int  // how many fields were redacted in input
+	LeakedCount   int  // how many PII found in output (not from input)
+	Blocked       bool // whether the response was blocked
 	Duration      string
 }
 

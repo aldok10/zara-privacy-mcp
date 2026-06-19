@@ -42,12 +42,12 @@ type ChatMessage struct {
 
 // ChatResponse from an LLM provider.
 type ChatResponse struct {
-	Provider     string `json:"provider"`
-	Model        string `json:"model"`
-	Content      string `json:"content"`
-	Duration     string `json:"duration"`
-	TokensUsed   int    `json:"tokens_used,omitempty"`
-	Redacted     int    `json:"redacted_fields,omitempty"`
+	Provider   string `json:"provider"`
+	Model      string `json:"model"`
+	Content    string `json:"content"`
+	Duration   string `json:"duration"`
+	TokensUsed int    `json:"tokens_used,omitempty"`
+	Redacted   int    `json:"redacted_fields,omitempty"`
 }
 
 // NewRegistry creates an AI provider registry.

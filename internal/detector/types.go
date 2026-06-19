@@ -15,20 +15,20 @@ const (
 type Risk int
 
 const (
-	RiskNone  Risk = 0
-	RiskLow   Risk = 1
-	RiskMid   Risk = 2
-	RiskHigh  Risk = 3
-	RiskCrit  Risk = 4
+	RiskNone Risk = 0
+	RiskLow  Risk = 1
+	RiskMid  Risk = 2
+	RiskHigh Risk = 3
+	RiskCrit Risk = 4
 )
 
 // Finding represents a single detection result.
 type Finding struct {
-	Type     string `json:"type"`
-	Value    string `json:"value,omitempty"`
-	Position int    `json:"position"`
-	Length   int    `json:"length"`
-	Risk     Risk   `json:"risk"`
+	Type     string  `json:"type"`
+	Value    string  `json:"value,omitempty"`
+	Position int     `json:"position"`
+	Length   int     `json:"length"`
+	Risk     Risk    `json:"risk"`
 	Entropy  float64 `json:"entropy,omitempty"`
 }
 
@@ -42,9 +42,9 @@ type ScanResult struct {
 
 // RedactResult is the output of redacting context.
 type RedactResult struct {
-	Redacted       string    `json:"redacted"`
-	Replacements   []Mapping `json:"replacements"`
-	TokensSaved    int       `json:"tokens_saved,omitempty"`
+	Redacted     string    `json:"redacted"`
+	Replacements []Mapping `json:"replacements"`
+	TokensSaved  int       `json:"tokens_saved,omitempty"`
 }
 
 // Mapping stores a single placeholder-to-original mapping.
@@ -56,17 +56,17 @@ type Mapping struct {
 
 // CompressResult is the output of context compression.
 type CompressResult struct {
-	Compressed  string `json:"compressed"`
-	TokensSaved int    `json:"tokens_saved"`
-	TokensBefore int   `json:"tokens_before"`
-	TokensAfter  int   `json:"tokens_after"`
+	Compressed   string `json:"compressed"`
+	TokensSaved  int    `json:"tokens_saved"`
+	TokensBefore int    `json:"tokens_before"`
+	TokensAfter  int    `json:"tokens_after"`
 }
 
 // MemoryFilterResult validates memory before persistence.
 type MemoryFilterResult struct {
-	Allowed   bool     `json:"allowed"`
-	Reason    string   `json:"reason,omitempty"`
-	Blocked   []string `json:"blocked,omitempty"`
+	Allowed bool     `json:"allowed"`
+	Reason  string   `json:"reason,omitempty"`
+	Blocked []string `json:"blocked,omitempty"`
 }
 
 // Secret pattern definition.
@@ -79,9 +79,9 @@ type SecretPattern struct {
 
 // PIIPattern definition.
 type PIIPattern struct {
-	Name      string
-	Regex     string
-	Risk      Risk
-	Locales   []string
+	Name       string
+	Regex      string
+	Risk       Risk
+	Locales    []string
 	EntropyMin float64
 }

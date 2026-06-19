@@ -49,11 +49,11 @@ type Request struct {
 
 // Response from the API proxy.
 type Response struct {
-	StatusCode int                 `json:"status_code"`
-	Headers    map[string]string   `json:"headers,omitempty"`
-	Body       string              `json:"body"`
-	Duration   string              `json:"duration"`
-	Masked     []detector.Finding  `json:"masked,omitempty"`
+	StatusCode int                `json:"status_code"`
+	Headers    map[string]string  `json:"headers,omitempty"`
+	Body       string             `json:"body"`
+	Duration   string             `json:"duration"`
+	Masked     []detector.Finding `json:"masked,omitempty"`
 }
 
 // NewRegistry creates an API registry with the given configurations.
