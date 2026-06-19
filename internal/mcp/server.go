@@ -234,11 +234,16 @@ func (s *Server) ServeMessage(raw []byte) []byte {
 
 	result, rpcErr := s.handleMethod(req)
 
+	// Notifications (no ID) or nil results don't get a response
+	if req.ID == nil || (result == nil && rpcErr == nil) {
+		return nil
+	}
+
 	duration := time.Since(start)
 	s.metrics.ObserveDuration(req.Method, duration.Seconds())
 
 	// OpenObserve telemetry
-	if req.Method == "call_tool" {
+	if req.Method == "call_tool" || req.Method == "tools/call" {
 		status := "ok"
 		if rpcErr != nil {
 			status = "error"
@@ -254,9 +259,11 @@ func (s *Server) handleMethod(req rpcRequest) (interface{}, *rpcError) {
 	switch req.Method {
 	case "initialize":
 		return s.handleInitialize(req), nil
-	case "list_tools":
+	case "initialized", "notifications/initialized":
+		return nil, nil
+	case "list_tools", "tools/list":
 		return s.handleListTools(), nil
-	case "call_tool":
+	case "call_tool", "tools/call":
 		return s.handleCallTool(req)
 	case "shutdown":
 		return map[string]string{"status": "shutting down"}, nil
@@ -616,14 +623,7 @@ func (s *Server) callScan(args json.RawMessage) (interface{}, *rpcError) {
 	result := s.engine.ScanContext(p.Text, p.Locales...)
 	s.metrics.IncScan(len(result.PIIFound), len(result.SecretsFound))
 
-	return map[string]interface{}{
-		"content": []map[string]interface{}{
-			{
-				"type": "json",
-				"json": result,
-			},
-		},
-	}, nil
+	return jsonContent(result)
 }
 
 func (s *Server) callRedact(args json.RawMessage) (interface{}, *rpcError) {
@@ -641,14 +641,7 @@ func (s *Server) callRedact(args json.RawMessage) (interface{}, *rpcError) {
 	result := s.engine.RedactContext(p.Text, p.Locales...)
 	s.metrics.IncRedact(len(result.Replacements), result.TokensSaved)
 
-	return map[string]interface{}{
-		"content": []map[string]interface{}{
-			{
-				"type": "json",
-				"json": result,
-			},
-		},
-	}, nil
+	return jsonContent(result)
 }
 
 func (s *Server) callUnredact(args json.RawMessage) (interface{}, *rpcError) {
@@ -689,14 +682,7 @@ func (s *Server) callCompress(args json.RawMessage) (interface{}, *rpcError) {
 		"tokens_saved": beforeTokens - afterTokens,
 	}
 
-	return map[string]interface{}{
-		"content": []map[string]interface{}{
-			{
-				"type": "json",
-				"json": result,
-			},
-		},
-	}, nil
+	return jsonContent(result)
 }
 
 func (s *Server) callMemoryFilter(args json.RawMessage) (interface{}, *rpcError) {
@@ -729,14 +715,7 @@ func (s *Server) callMemoryFilter(args json.RawMessage) (interface{}, *rpcError)
 		Blocked: blocked,
 	}
 
-	return map[string]interface{}{
-		"content": []map[string]interface{}{
-			{
-				"type": "json",
-				"json": result,
-			},
-		},
-	}, nil
+	return jsonContent(result)
 }
 
 func (s *Server) callClassify(args json.RawMessage) (interface{}, *rpcError) {
@@ -750,27 +729,13 @@ func (s *Server) callClassify(args json.RawMessage) (interface{}, *rpcError) {
 	scanResult := s.engine.ScanContext(p.Text)
 	classification := s.classifier.Classify(p.Text, scanResult)
 
-	return map[string]interface{}{
-		"content": []map[string]interface{}{
-			{
-				"type": "json",
-				"json": classification,
-			},
-		},
-	}, nil
+	return jsonContent(classification)
 }
 
 func (s *Server) callStoreStats() (interface{}, *rpcError) {
 	stats := s.store.Stats()
 
-	return map[string]interface{}{
-		"content": []map[string]interface{}{
-			{
-				"type": "json",
-				"json": stats,
-			},
-		},
-	}, nil
+	return jsonContent(stats)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -829,14 +794,7 @@ func (s *Server) callDBQuery(args json.RawMessage) (interface{}, *rpcError) {
 		return nil, &rpcError{Code: -32603, Message: "Query error: " + err.Error()}
 	}
 
-	return map[string]interface{}{
-		"content": []map[string]interface{}{
-			{
-				"type": "json",
-				"json": result,
-			},
-		},
-	}, nil
+	return jsonContent(result)
 }
 
 func (s *Server) callDBListTables(args json.RawMessage) (interface{}, *rpcError) {
@@ -857,18 +815,11 @@ func (s *Server) callDBListTables(args json.RawMessage) (interface{}, *rpcError)
 		return nil, &rpcError{Code: -32603, Message: err.Error()}
 	}
 
-	return map[string]interface{}{
-		"content": []map[string]interface{}{
-			{
-				"type": "json",
-				"json": map[string]interface{}{
-					"database": p.Database,
-					"tables":   tables,
-					"count":    len(tables),
-				},
-			},
-		},
-	}, nil
+	return jsonContent(map[string]interface{}{
+		"database": p.Database,
+		"tables":   tables,
+		"count":    len(tables),
+	})
 }
 
 func (s *Server) callDBDescribe(args json.RawMessage) (interface{}, *rpcError) {
@@ -890,19 +841,12 @@ func (s *Server) callDBDescribe(args json.RawMessage) (interface{}, *rpcError) {
 		return nil, &rpcError{Code: -32603, Message: err.Error()}
 	}
 
-	return map[string]interface{}{
-		"content": []map[string]interface{}{
-			{
-				"type": "json",
-				"json": map[string]interface{}{
-					"database": p.Database,
-					"table":    p.Table,
-					"columns":  columns,
-					"count":    len(columns),
-				},
-			},
-		},
-	}, nil
+	return jsonContent(map[string]interface{}{
+		"database": p.Database,
+		"table":    p.Table,
+		"columns":  columns,
+		"count":    len(columns),
+	})
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -938,9 +882,7 @@ func (s *Server) callMongoFind(args json.RawMessage) (interface{}, *rpcError) {
 		return nil, &rpcError{Code: -32603, Message: err.Error()}
 	}
 
-	return map[string]interface{}{
-		"content": []map[string]interface{}{{"type": "json", "json": result}},
-	}, nil
+	return jsonContent(result)
 }
 
 func (s *Server) callMongoListCollections(args json.RawMessage) (interface{}, *rpcError) {
@@ -961,13 +903,11 @@ func (s *Server) callMongoListCollections(args json.RawMessage) (interface{}, *r
 		return nil, &rpcError{Code: -32603, Message: err.Error()}
 	}
 
-	return map[string]interface{}{
-		"content": []map[string]interface{}{{"type": "json", "json": map[string]interface{}{
-			"database":    p.Database,
-			"collections": cols,
-			"count":       len(cols),
-		}}},
-	}, nil
+	return jsonContent(map[string]interface{}{
+		"database":    p.Database,
+		"collections": cols,
+		"count":       len(cols),
+	})
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -994,9 +934,7 @@ func (s *Server) callRedisExec(args json.RawMessage) (interface{}, *rpcError) {
 		return nil, &rpcError{Code: -32603, Message: err.Error()}
 	}
 
-	return map[string]interface{}{
-		"content": []map[string]interface{}{{"type": "json", "json": result}},
-	}, nil
+	return jsonContent(result)
 }
 
 func (s *Server) callRedisKeys(args json.RawMessage) (interface{}, *rpcError) {
@@ -1021,14 +959,12 @@ func (s *Server) callRedisKeys(args json.RawMessage) (interface{}, *rpcError) {
 		return nil, &rpcError{Code: -32603, Message: err.Error()}
 	}
 
-	return map[string]interface{}{
-		"content": []map[string]interface{}{{"type": "json", "json": map[string]interface{}{
-			"database": p.Database,
-			"pattern":  p.Pattern,
-			"keys":     keys,
-			"count":    len(keys),
-		}}},
-	}, nil
+	return jsonContent(map[string]interface{}{
+		"database": p.Database,
+		"pattern":  p.Pattern,
+		"keys":     keys,
+		"count":    len(keys),
+	})
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1068,29 +1004,15 @@ func (s *Server) callHTTPRequest(args json.RawMessage) (interface{}, *rpcError) 
 		return nil, &rpcError{Code: -32603, Message: err.Error()}
 	}
 
-	return map[string]interface{}{
-		"content": []map[string]interface{}{
-			{
-				"type": "json",
-				"json": resp,
-			},
-		},
-	}, nil
+	return jsonContent(resp)
 }
 
 func (s *Server) callHTTPListAPIs() (interface{}, *rpcError) {
 	apis := s.apiRegistry.List()
-	return map[string]interface{}{
-		"content": []map[string]interface{}{
-			{
-				"type": "json",
-				"json": map[string]interface{}{
-					"apis":  apis,
-					"count": len(apis),
-				},
-			},
-		},
-	}, nil
+	return jsonContent(map[string]interface{}{
+		"apis":  apis,
+		"count": len(apis),
+	})
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1122,14 +1044,7 @@ func (s *Server) callAIChat(args json.RawMessage) (interface{}, *rpcError) {
 		return nil, &rpcError{Code: -32603, Message: err.Error()}
 	}
 
-	return map[string]interface{}{
-		"content": []map[string]interface{}{
-			{
-				"type": "json",
-				"json": response,
-			},
-		},
-	}, nil
+	return jsonContent(response)
 }
 
 func (s *Server) callAIListProviders() (interface{}, *rpcError) {
@@ -1145,17 +1060,10 @@ func (s *Server) callAIListProviders() (interface{}, *rpcError) {
 		})
 	}
 
-	return map[string]interface{}{
-		"content": []map[string]interface{}{
-			{
-				"type": "json",
-				"json": map[string]interface{}{
-					"providers": details,
-					"count":     len(details),
-				},
-			},
-		},
-	}, nil
+	return jsonContent(map[string]interface{}{
+		"providers": details,
+		"count":     len(details),
+	})
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1193,18 +1101,11 @@ func (s *Server) callConfigList() (interface{}, *rpcError) {
 		})
 	}
 
-	return map[string]interface{}{
-		"content": []map[string]interface{}{
-			{
-				"type": "json",
-				"json": map[string]interface{}{
-					"databases":    databases,
-					"apis":         apis,
-					"ai_providers": aiProvs,
-				},
-			},
-		},
-	}, nil
+	return jsonContent(map[string]interface{}{
+		"databases":    databases,
+		"apis":         apis,
+		"ai_providers": aiProvs,
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -1275,6 +1176,19 @@ func estimateTokens(s string) int {
 		return 0
 	}
 	return len(strings.Fields(s)) + (len(s) / 4)
+}
+
+// jsonContent wraps any value as MCP-compliant text content (JSON-serialized).
+func jsonContent(v interface{}) (interface{}, *rpcError) {
+	b, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return nil, &rpcError{Code: -32603, Message: "JSON marshal error: " + err.Error()}
+	}
+	return map[string]interface{}{
+		"content": []map[string]interface{}{
+			{"type": "text", "text": string(b)},
+		},
+	}, nil
 }
 
 // Stop gracefully shuts down the server.

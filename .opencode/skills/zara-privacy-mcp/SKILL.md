@@ -1,9 +1,9 @@
 ---
 name: zara-privacy-mcp
-description: Zara Secure MCP — general-purpose secure gateway with 15 tools: privacy layer, database proxy, HTTP API proxy, and AI provider proxy. All with automatic data masking.
+description: Zara Privacy MCP — general-purpose secure gateway with 15 tools: privacy layer, database proxy, HTTP API proxy, and AI provider proxy. All with automatic data masking.
 ---
 
-# Zara Secure MCP Skill
+# Zara Privacy MCP Skill
 
 **General-purpose secure gateway for OpenCode.** Privacy layer + database proxy + HTTP API proxy + AI provider proxy — all with automatic data masking.
 
@@ -12,7 +12,6 @@ Agent → MCP → DB/HTTP/AI call → masking → agent
 ```
 
 > Every outbound call through the MCP is automatically masked. API keys, passwords, PII — zero leaks to external services.
-> Renamed from `zara-privacy-mcp` → `zara-privacy-mcp`. Binary: `zara-privacy-mcp`.
 
 ---
 
