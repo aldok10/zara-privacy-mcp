@@ -8,6 +8,7 @@ func TestValidateSQL(t *testing.T) {
 		query   string
 		wantErr bool
 	}{
+		// Blocked keywords
 		{"block DROP TABLE", "DROP TABLE users", true},
 		{"block TRUNCATE", "TRUNCATE TABLE logs", true},
 		{"block ALTER", "ALTER TABLE users ADD col int", true},
@@ -18,14 +19,38 @@ func TestValidateSQL(t *testing.T) {
 		{"block INTO OUTFILE", "SELECT * INTO OUTFILE '/tmp/x' FROM users", true},
 		{"block XP_CMDSHELL", "EXEC XP_CMDSHELL 'dir'", true},
 		{"block COPY PROGRAM", "COPY PROGRAM '/bin/sh'", true},
+		{"block INSERT", "INSERT INTO users (name) VALUES ('test')", true},
+		{"block EXEC", "EXEC sp_help", true},
+
+		// Multi-statement
 		{"block multi-statement", "SELECT 1; DROP TABLE users;", true},
+		{"block semicolon outside string", "SELECT 1; SELECT 2", true},
+		{"allow semicolon inside string", "SELECT * FROM users WHERE name = 'a;b'", false},
+
+		// DELETE/UPDATE enforcement
 		{"block DELETE without WHERE", "DELETE FROM users", true},
 		{"block UPDATE without WHERE", "UPDATE users SET active=0", true},
-		{"allow SELECT with WHERE", "SELECT * FROM users WHERE id = 1", false},
-		{"allow INSERT INTO", "INSERT INTO users (name) VALUES ('test')", false},
 		{"allow DELETE with WHERE", "DELETE FROM users WHERE id = 1", false},
 		{"allow UPDATE with WHERE", "UPDATE users SET name='x' WHERE id = 1", false},
+
+		// Injection patterns
+		{"block UNION SELECT", "SELECT id FROM users UNION SELECT password FROM admin", true},
+		{"block UNION ALL SELECT", "SELECT 1 UNION ALL SELECT 2", true},
+		{"block comment obfuscation", "SELECT * FROM users /* DROP TABLE */", true},
+		{"block line comment injection", "SELECT * FROM users --", true},
+		{"block SLEEP injection", "SELECT SLEEP(5)", true},
+		{"block BENCHMARK injection", "SELECT BENCHMARK(1000000, SHA1('x'))", true},
+		{"block WAITFOR DELAY", "SELECT 1 WAITFOR DELAY '00:00:05'", true},
+		{"block PG_SLEEP", "SELECT PG_SLEEP(5)", true},
+		{"block stacked via comment", "SELECT 1;--\nDROP TABLE users", true},
+
+		// Allowed read queries
+		{"allow SELECT", "SELECT * FROM users WHERE id = 1", false},
 		{"allow CTE", "WITH active AS (SELECT * FROM users WHERE active=1) SELECT * FROM active", false},
+		{"allow SHOW", "SHOW TABLES", false},
+		{"allow EXPLAIN", "EXPLAIN SELECT * FROM users", false},
+		{"allow DESCRIBE", "DESCRIBE users", false},
+		{"allow PRAGMA", "PRAGMA table_info('users')", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
