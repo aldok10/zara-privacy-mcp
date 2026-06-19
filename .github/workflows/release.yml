@@ -1,0 +1,51 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Test
+        run: make test
+        env:
+          ZARA_ENCRYPTION_KEY: "ci-test-key-32-bytes-long-minimum!!"
+
+  release:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build binaries
+        run: |
+          make build
+          make build-linux
+          make build-darwin
+
+      - name: Semantic Release
+        uses: go-semantic-release/action@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          changelog-generator-opt: "emojis=true"
+          asset: |
+            zara-privacy-mcp
+            zara-privacy-mcp-linux-amd64
+            zara-privacy-mcp-darwin-arm64
