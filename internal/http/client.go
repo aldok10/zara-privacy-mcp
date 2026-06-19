@@ -5,10 +5,13 @@ package http
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -92,7 +95,12 @@ func (r *Registry) Do(apiName string, req Request) (*Response, error) {
 
 	// Build URL
 	path := strings.TrimLeft(req.Path, "/")
-	url := fmt.Sprintf("%s/%s", cfg.BaseURL, path)
+	fullURL := fmt.Sprintf("%s/%s", cfg.BaseURL, path)
+
+	// SSRF protection: validate resolved URL
+	if err := validateURL(fullURL); err != nil {
+		return nil, err
+	}
 
 	// Build body
 	var bodyReader io.Reader
@@ -100,10 +108,18 @@ func (r *Registry) Do(apiName string, req Request) (*Response, error) {
 		bodyReader = bytes.NewReader(req.Body)
 	}
 
+	// Apply per-request timeout via context (thread-safe)
+	timeout := 30
+	if req.Timeout > 0 {
+		timeout = req.Timeout
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
+	defer cancel()
+
 	// Create request
-	httpReq, err := http.NewRequest(strings.ToUpper(req.Method), url, bodyReader)
+	httpReq, err := http.NewRequestWithContext(ctx, strings.ToUpper(req.Method), fullURL, bodyReader)
 	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
+		return nil, fmt.Errorf("create request failed")
 	}
 
 	// Apply auth
@@ -124,23 +140,16 @@ func (r *Registry) Do(apiName string, req Request) (*Response, error) {
 		httpReq.Header.Set("Content-Type", "application/json")
 	}
 
-	// Apply per-request timeout
-	timeout := 30
-	if req.Timeout > 0 {
-		timeout = req.Timeout
-	}
-	r.client.Timeout = time.Duration(timeout) * time.Second
-
 	// Execute
 	httpResp, err := r.client.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("%s %s: %w", req.Method, url, err)
+		return nil, fmt.Errorf("request failed")
 	}
 	defer httpResp.Body.Close()
 
-	bodyBytes, err := io.ReadAll(httpResp.Body)
+	bodyBytes, err := io.ReadAll(io.LimitReader(httpResp.Body, 50*1024*1024)) // 50MB max
 	if err != nil {
-		return nil, fmt.Errorf("read body: %w", err)
+		return nil, fmt.Errorf("read response failed")
 	}
 
 	body := string(bodyBytes)
@@ -209,4 +218,41 @@ func (r *Registry) maskResponse(body *string) []detector.Finding {
 	*body = masked
 
 	return all
+}
+
+// validateURL blocks requests to internal/private networks (SSRF prevention).
+func validateURL(rawURL string) error {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL")
+	}
+
+	// Only allow http/https
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("blocked: scheme %q not allowed", parsed.Scheme)
+	}
+
+	host := parsed.Hostname()
+
+	// Block cloud metadata endpoints
+	if host == "169.254.169.254" || host == "100.100.100.200" || host == "metadata.google.internal" {
+		return fmt.Errorf("blocked: cloud metadata endpoint")
+	}
+
+	// Block private/internal IPs
+	ip := net.ParseIP(host)
+	if ip != nil {
+		privateRanges := []string{
+			"127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12",
+			"192.168.0.0/16", "169.254.0.0/16", "::1/128", "fc00::/7",
+		}
+		for _, cidr := range privateRanges {
+			_, network, _ := net.ParseCIDR(cidr)
+			if network.Contains(ip) {
+				return fmt.Errorf("blocked: private/internal IP address")
+			}
+		}
+	}
+
+	return nil
 }

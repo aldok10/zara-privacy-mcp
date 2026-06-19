@@ -195,7 +195,15 @@ func (s *Server) Start() error {
 
 	addr := fmt.Sprintf("%s:%s", s.cfg.Host, s.cfg.Port)
 	log.Printf("[Zara Privacy MCP] Starting server on %s", addr)
-	return http.ListenAndServe(addr, mux)
+
+	srv := &http.Server{
+		Addr:         addr,
+		Handler:      mux,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 60 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
+	return srv.ListenAndServe()
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -277,14 +285,21 @@ func (s *Server) handleMethod(req rpcRequest) (interface{}, *rpcError) {
 // ---------------------------------------------------------------------------
 
 func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		if rv := recover(); rv != nil {
+			log.Printf("[PANIC] handleMCP: %v", rv)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+		}
+	}()
+
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	body, err := io.ReadAll(r.Body)
+	body, err := io.ReadAll(io.LimitReader(r.Body, 10*1024*1024)) // 10MB max
 	if err != nil {
-		s.writeError(w, nil, -32700, "Parse error", err.Error())
+		s.writeError(w, nil, -32700, "Parse error", "failed to read request body")
 		return
 	}
 
@@ -616,6 +631,9 @@ func (s *Server) callScan(args json.RawMessage) (interface{}, *rpcError) {
 	if err := json.Unmarshal(args, &p); err != nil {
 		return nil, &rpcError{Code: -32602, Message: "Invalid arguments"}
 	}
+	if len(p.Text) > maxTextSize {
+		return nil, &rpcError{Code: -32602, Message: "Text exceeds maximum allowed size (1MB)"}
+	}
 	if len(p.Locales) == 0 {
 		p.Locales = s.cfg.DefaultLocales
 	}
@@ -757,6 +775,11 @@ func (s *Server) callDBQuery(args json.RawMessage) (interface{}, *rpcError) {
 		return nil, &rpcError{Code: -32602, Message: "Unknown database: " + p.Database}
 	}
 
+	// Security gate: block dangerous SQL statements
+	if err := validateSQL(p.Query); err != nil {
+		return nil, &rpcError{Code: -32602, Message: err.Error()}
+	}
+
 	var result *db.QueryResult
 	var err error
 
@@ -877,9 +900,14 @@ func (s *Server) callMongoFind(args json.RawMessage) (interface{}, *rpcError) {
 		filter = p.Filter
 	}
 
+	// Security gate: block dangerous MongoDB operators
+	if err := validateMongoFilter(filter); err != nil {
+		return nil, &rpcError{Code: -32602, Message: err.Error()}
+	}
+
 	result, err := mdb.Find(p.Collection, filter, p.Limit)
 	if err != nil {
-		return nil, &rpcError{Code: -32603, Message: err.Error()}
+		return nil, &rpcError{Code: -32603, Message: "Query execution failed"}
 	}
 
 	return jsonContent(result)
@@ -922,6 +950,11 @@ func (s *Server) callRedisExec(args json.RawMessage) (interface{}, *rpcError) {
 	}
 	if err := json.Unmarshal(args, &p); err != nil {
 		return nil, &rpcError{Code: -32602, Message: "Invalid arguments"}
+	}
+
+	// Security gate: block dangerous Redis commands
+	if blockedRedisCommands[strings.ToUpper(p.Command)] {
+		return nil, &rpcError{Code: -32602, Message: "blocked: Redis command " + p.Command + " not allowed"}
 	}
 
 	rdb, ok := s.redisRegistry.Get(p.Database)
@@ -1198,3 +1231,68 @@ func (s *Server) Stop() {
 		s.store.Close()
 	}
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Security Validators
+// ═══════════════════════════════════════════════════════════════════════════
+
+// validateSQL blocks dangerous SQL statements.
+func validateSQL(query string) error {
+	upper := strings.TrimSpace(strings.ToUpper(query))
+
+	// Block DDL and dangerous statements
+	blocked := []string{
+		"DROP ", "TRUNCATE ", "ALTER ", "CREATE ",
+		"GRANT ", "REVOKE ",
+		"LOAD_FILE", "INTO OUTFILE", "INTO DUMPFILE",
+		"XP_CMDSHELL", "COPY PROGRAM",
+	}
+	for _, b := range blocked {
+		if strings.Contains(upper, b) {
+			return fmt.Errorf("blocked: statement contains dangerous keyword %q", strings.TrimSpace(b))
+		}
+	}
+
+	// Block multi-statement (semicolons not in string literals)
+	if strings.Count(query, ";") > 1 {
+		return fmt.Errorf("blocked: multi-statement queries not allowed")
+	}
+
+	// Block DELETE/UPDATE without WHERE
+	if (strings.HasPrefix(upper, "DELETE") || strings.HasPrefix(upper, "UPDATE")) && !strings.Contains(upper, "WHERE") {
+		return fmt.Errorf("blocked: %s without WHERE clause", strings.Fields(upper)[0])
+	}
+
+	return nil
+}
+
+// blockedRedisCommands are Redis commands that should never be executed via MCP.
+var blockedRedisCommands = map[string]bool{
+	"FLUSHALL": true, "FLUSHDB": true, "SHUTDOWN": true,
+	"CONFIG": true, "DEBUG": true, "EVAL": true, "EVALSHA": true,
+	"SCRIPT": true, "SLAVEOF": true, "REPLICAOF": true, "MODULE": true,
+	"BGSAVE": true, "BGREWRITEAOF": true, "CLUSTER": true,
+}
+
+// blockedMongoOperators are MongoDB operators that should not be in user filters.
+var blockedMongoOperators = []string{"$where", "$expr", "$function", "$accumulator"}
+
+// validateMongoFilter recursively checks for dangerous operators.
+func validateMongoFilter(filter map[string]interface{}) error {
+	for key, val := range filter {
+		for _, op := range blockedMongoOperators {
+			if strings.EqualFold(key, op) {
+				return fmt.Errorf("blocked: MongoDB operator %s not allowed", key)
+			}
+		}
+		if sub, ok := val.(map[string]interface{}); ok {
+			if err := validateMongoFilter(sub); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// maxTextSize is the maximum text input size for tool calls (1MB).
+const maxTextSize = 1024 * 1024
