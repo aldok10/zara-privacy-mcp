@@ -1,5 +1,5 @@
 ---
-name: zara-secure-mcp
+name: zara-privacy-mcp
 description: Zara Secure MCP — general-purpose secure gateway with 15 tools: privacy layer, database proxy, HTTP API proxy, and AI provider proxy. All with automatic data masking.
 ---
 
@@ -12,7 +12,7 @@ Agent → MCP → DB/HTTP/AI call → masking → agent
 ```
 
 > Every outbound call through the MCP is automatically masked. API keys, passwords, PII — zero leaks to external services.
-> Renamed from `zara-privacy-mcp` → `zara-secure-mcp`. Binary: `zara-secure-mcp`.
+> Renamed from `zara-privacy-mcp` → `zara-privacy-mcp`. Binary: `zara-privacy-mcp`.
 
 ---
 
@@ -81,7 +81,7 @@ Agent → db_query("prod", "SELECT email, api_key FROM users")
 
 ### HTTP API Proxy Flow
 ```
-Agent → http_request("github", "GET", "/repos/aldok10/zara-secure-mcp")
+Agent → http_request("github", "GET", "/repos/aldok10/zara-privacy-mcp")
   → MCP injects auth header from env → sends request → masks response
   → Agent gets: {status_code: 200, body: "{...}", masked: [...]}
 ```
@@ -164,7 +164,7 @@ Agent → db_query(database="prod", query="SELECT * FROM users WHERE email=$1", 
 ### 2. "Create a GitHub issue"
 User: "Create a new issue titled 'Add MySQL support'"
 ```
-Agent → http_request(api="github", method="POST", path="/repos/aldok10/zara-secure-mcp/issues", body={title:"Add MySQL support"})
+Agent → http_request(api="github", method="POST", path="/repos/aldok10/zara-privacy-mcp/issues", body={title:"Add MySQL support"})
   → MCP auto-injects token from env
   → Display results
 ```
@@ -197,17 +197,17 @@ cd /path/to/zara-privacy-mcp
 make install-skill
 ```
 This copies the skill to:
-- `~/.agents/skills/zara-secure-mcp/`
-- `~/.claude/skills/zara-secure-mcp/`
-- `.opencode/skills/zara-secure-mcp/` (project)
+- `~/.agents/skills/zara-privacy-mcp/`
+- `~/.claude/skills/zara-privacy-mcp/`
+- `.opencode/skills/zara-privacy-mcp/` (project)
 
 ### Method 2: Manual
 ```bash
 # Copy to global agent directory
-cp -r .opencode/skills/zara-secure-mcp ~/.agents/skills/
+cp -r .opencode/skills/zara-privacy-mcp ~/.agents/skills/
 
 # Copy to Claude skills
-cp -r .opencode/skills/zara-secure-mcp ~/.claude/skills/
+cp -r .opencode/skills/zara-privacy-mcp ~/.claude/skills/
 ```
 
 ---
@@ -219,4 +219,4 @@ cp -r .opencode/skills/zara-secure-mcp ~/.claude/skills/
 - **Masking is automatic** — the agent does not need to explicitly request masking
 - **Credentials never appear in prompts** — all auth comes from env vars, injected by the MCP
 - **Fallback**: if the MCP does not respond, fall back to manual methods
-- **Testing**: `zara-secure-mcp` (HTTP) or `zara-secure-mcp --stdio` (sidecar)
+- **Testing**: `zara-privacy-mcp` (HTTP) or `zara-privacy-mcp --stdio` (sidecar)
