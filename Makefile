@@ -116,6 +116,7 @@ clean:
 	rm -f $(BINARY)
 	rm -f $(BINARY)-linux-amd64
 	rm -f $(BINARY)-darwin-arm64
+	rm -f $(BINARY)-windows-amd64.exe
 	rm -f coverage.out coverage.html
 	rm -rf /tmp/zara-privacy-dev.db*
 
