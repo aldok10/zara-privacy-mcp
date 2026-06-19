@@ -1,12 +1,12 @@
-# Zara Secure MCP
+# Zara Privacy MCP
 
-**General-purpose secure gateway for OpenCode.** Privacy layer + database proxy + HTTP API proxy + AI provider proxy — all with automatic data masking.
+**Privacy-first MCP gateway for AI agents.** 19 tools: privacy layer + database proxy (SQL/MongoDB/Redis) + HTTP API proxy + AI provider proxy — all with automatic data masking.
 
-Data flow: `Agent → MCP → DB/HTTP/AI call → masking → agent`
+```
+Agent → MCP (stdio) → DB/HTTP/AI call → auto-mask → Agent
+```
 
-> 🔒 **Every outbound call is automatically masked.** Secrets, PII, and credentials never leak to external services.
-
-> 🔒 **Your data, your control.** Zero secrets leak to third-party LLM providers.
+> Every outbound call is automatically scanned and masked. Secrets, PII, credentials — zero leaks to external services.
 
 ---
 
@@ -27,485 +27,338 @@ Zara Privacy MCP intercepts context before it reaches the LLM, replaces sensitiv
 ## Architecture
 
 ```
-OpenCode (AI Client)
-   │  MCP (stdio or HTTP)
+OpenCode / Kiro / Any MCP Client
+   │  stdio (JSON-RPC)
    ▼
-Zara Secure MCP
+Zara Privacy MCP
    │
    ├── Privacy Layer (always on)
-   │   ├── scan/redact/unredact secrets & PII
-   │   ├── context compression
-   │   ├── memory filter
-   │   └── data classification
+   │   ├── scan/redact/unredact (21 secret + 15 PII patterns)
+   │   ├── context compression (dedup, strip, TF-IDF)
+   │   ├── memory filter (block high-risk persistence)
+   │   └── data classification (PUBLIC → SECRET)
    │
-    ├── Database Proxy
-    │   ├── PostgreSQL, MySQL, MariaDB, SQL Server, SQLite
-    │   ├── Auto-detect driver from DSN
-    │   ├── Auto-mask query results
-    │   └── Schema discovery
+   ├── Database Proxy
+   │   ├── SQL: PostgreSQL, MySQL, SQL Server, SQLite, Oracle, ClickHouse
+   │   ├── MongoDB: find, list collections
+   │   ├── Redis: exec any command, key listing
+   │   ├── Driver auto-detect from DSN
+   │   └── All results auto-masked before returning
    │
    ├── HTTP API Proxy
-   │   ├── Configured endpoints with auth
-   │   ├── Auto-mask responses
-   │   └── Safer curl alternative
+   │   ├── Auth injection from env (bearer, basic, header)
+   │   └── Response auto-masked
    │
    └── AI Provider Proxy
-       ├── OpenAI, Anthropic, Gemini, DeepSeek, OpenRouter
+       ├── OpenAI, Anthropic, Gemini, DeepSeek, OpenRouter, Groq
        ├── Auto-redact before send
        └── Auto-unredact after response
 ```
 
 ---
 
-## 15 MCP Tools
+## 19 MCP Tools
 
 ### Privacy (7)
-| Tool | What It Does |
+
+| Tool | Description |
 |------|-------------|
-| `scan_context` | Detect secrets + PII. Returns risk score + findings. No modification. |
-| `redact_context` | Replace sensitive data with `[PLACEHOLDER_N]` tokens. |
-| `unredact_response` | Restore original values from LLM responses. |
-| `compress_context` | Dedup, remove comments, extract key sections. Save tokens. |
-| `memory_filter` | Validate memory before persistence. Block high-risk data. |
-| `classify_data` | Assign sensitivity label (PUBLIC → SECRET). |
+| `scan_context` | Detect secrets + PII. Returns risk score + findings. |
+| `redact_context` | Replace sensitive data with reversible `[PLACEHOLDER_N]` tokens. |
+| `unredact_response` | Restore original values from LLM response placeholders. |
+| `compress_context` | Reduce tokens: dedup lines, strip comments, keyword extraction. |
+| `memory_filter` | Block high-risk data from being stored in memory. |
+| `classify_data` | Assign sensitivity label (PUBLIC, INTERNAL, CONFIDENTIAL, SECRET). |
 | `store_stats` | Get mapping store statistics. |
 
-### Database (3)
-| Tool | What It Does |
+### SQL Database (3)
+
+| Tool | Description |
 |------|-------------|
-| `db_query` | Execute SQL query (PostgreSQL, MySQL, MariaDB, SQL Server, SQLite). Results auto-scanned and masked. |
+| `db_query` | Execute SQL. Results auto-scanned and masked. |
 | `db_list_tables` | List all tables in a database. |
-| `db_describe` | Show column schema for a table. |
+| `db_describe` | Show column schema (name, type, nullable, key). |
+
+### MongoDB (2)
+
+| Tool | Description |
+|------|-------------|
+| `mongo_find` | Query documents with filter + limit. Results auto-masked. |
+| `mongo_list_collections` | List all collections. |
+
+### Redis (2)
+
+| Tool | Description |
+|------|-------------|
+| `redis_exec` | Execute any Redis command. Results auto-masked. |
+| `redis_keys` | List keys matching a pattern. |
 
 ### HTTP API (2)
-| Tool | What It Does |
+
+| Tool | Description |
 |------|-------------|
-| `http_request` | Make API call with auto auth + response masking. Safer curl. |
+| `http_request` | Make HTTP call with auto auth injection + response masking. |
 | `http_list_apis` | List configured API endpoints. |
 
 ### AI Provider (2)
-| Tool | What It Does |
+
+| Tool | Description |
 |------|-------------|
 | `ai_chat` | Chat with LLM. Auto-redacts prompt, auto-unredacts response. |
-| `ai_list_providers` | List configured AI providers + models. |
+| `ai_list_providers` | List configured providers + models. |
 
 ### Config (1)
-| Tool | What It Does |
+
+| Tool | Description |
 |------|-------------|
-| `config_list` | Show all configured databases, APIs, and AI providers. |
+| `config_list` | Show all active connections without exposing secrets. |
 
 ---
 
-## Quick Start
+## Install
 
 ### Prerequisites
 
-- Go 1.21+
-- No CGo required (pure Go SQLite via `modernc.org/sqlite`)
+- Go 1.21+ (no CGo required — pure Go SQLite)
 
-### 1. Build
+### Step 1: Build
 
 ```bash
+git clone https://github.com/aldok10/zara-privacy-mcp.git
+cd zara-privacy-mcp
 make build
-# Produces ./zara-privacy-mcp binary
 ```
 
-### 2. Configure connections (optional)
-
-Set any of these env vars to enable additional tools:
+### Step 2: Setup .env
 
 ```bash
-# Database (supported: postgres, mysql, mariadb, sqlserver, sqlite)
-export ZARA_DB_PROD_DRIVER=postgres
-export ZARA_DB_PROD_DSN=postgres://user:pass@host:5432/db
-
-# Alternative: auto-detect driver from DSN (no need to set DRIVER)
-export ZARA_DB_AUTO_DSN=mysql://user:pass@host:3306/db  # → auto-detected as mysql
-
-# HTTP API
-export ZARA_API_GITHUB_URL=https://api.github.com
-export ZARA_API_GITHUB_AUTH=bearer
-export ZARA_API_GITHUB_AUTH_ENV=GITHUB_TOKEN
-
-# AI Provider
-export ZARA_AI_OPENAI_BASE_URL=https://api.openai.com
-export ZARA_AI_OPENAI_API_KEY_ENV=OPENAI_API_KEY
-export ZARA_AI_OPENAI_MODELS=gpt-4o,gpt-4o-mini
-
-# Required for privacy tools
-export ZARA_ENCRYPTION_KEY="your-strong-passphrase-min-16-chars"
+cp .env.example .env
 ```
 
-### 3. Run (HTTP mode — for testing with Postman)
+Edit `.env` with your connections:
 
 ```bash
-make run-dev
-# Server starts on http://127.0.0.1:8530/mcp
-```
+# Required — encryption key for placeholder mapping (min 16 chars)
+ZARA_ENCRYPTION_KEY="your-strong-passphrase-min-32-chars"
 
-### 4. Run (Stdio mode — for OpenCode integration)
-
-```bash
-make build
-./zara-privacy-mcp --stdio
-```
-
-### 5. Install
-
-```bash
-make install
-# Binary installed to /usr/local/bin/zara-privacy-mcp
-```
-
-### 6. Test
-
-```bash
-make test
-# or
-go test -v -count=1 ./...
-```
-
-### 7. Smoke test
-
-```bash
-make smoke
-```
-
----
-
-## Database Proxy
-
-Configure via env vars. **Driver auto-detection** — no need to set DRIVER if your DSN uses a standard format.
-
-```bash
-# PostgreSQL (explicit)
+# SQL Database (add as many as needed, replace <NAME> with your label)
 ZARA_DB_PROD_DRIVER=postgres
-ZARA_DB_PROD_DSN=postgres://user:pass@host:5432/mydb?sslmode=require
-ZARA_DB_PROD_MAX_CONNS=10
+ZARA_DB_PROD_DSN=postgres://user:pass@host:5432/mydb?sslmode=disable
 
-# MySQL / MariaDB
 ZARA_DB_MYSQL_DRIVER=mysql
-ZARA_DB_MYSQL_DSN=user:pass@tcp(localhost:3306)/mydb?charset=utf8mb4&parseTime=true
+ZARA_DB_MYSQL_DSN=user:pass@tcp(host:3306)/mydb?charset=utf8mb4
 
-# Alternative: use alias "mariadb" (still uses the mysql driver)
-ZARA_DB_SERVICE_DRIVER=mariadb
-ZARA_DB_SERVICE_DSN=user:pass@tcp(host:3306)/mydb
+# MongoDB
+ZARA_MONGO_APP_URI=mongodb://user:pass@host:27017
+ZARA_MONGO_APP_DATABASE=myapp
 
-# SQL Server
-ZARA_DB_MSSQL_DRIVER=sqlserver
-ZARA_DB_MSSQL_DSN=sqlserver://user:pass@localhost:1433?database=mydb&encrypt=disable
+# Redis
+ZARA_REDIS_CACHE_ADDR=host:6379
+ZARA_REDIS_CACHE_PASSWORD=secret
+ZARA_REDIS_CACHE_DB=0
 
-# SQLite
-ZARA_DB_LOCAL_DRIVER=sqlite
-ZARA_DB_LOCAL_DSN=/tmp/dev.db
-
-# Auto-detect (no DRIVER needed)
-ZARA_DB_AUTO_DSN=postgres://user:pass@localhost:5432/mydb
-```
-
-### Supported Drivers
-
-| Driver | Aliases | Dialect Auto-Detect |
-|--------|---------|-------------------|
-| `postgres` | `pg`, `postgresql` | `postgres://` / `postgresql://` |
-| `mysql` | `mariadb`, `maria` | `mysql://` / `mariadb://` / `user@tcp(...)` / `user@unix(...)` |
-| `sqlserver` | `mssql`, `microsoft` | `sqlserver://` |
-| `sqlite` | `sqlite3` | `sqlite://` / `*.db` / `*.sqlite` / `*.sqlite3` |
-
-How it works: if `ZARA_DB_<NAME>_DRIVER` is unknown or empty, the system auto-detects the driver from the DSN format. Just set `_DSN` and you're good.
-
-When you call `db_query`, results are automatically scanned for sensitive data:
-
-```
-Agent: db_query(database="prod", query="SELECT email, api_key FROM users")
-  ↓
-MCP:  Executes query → scans every cell → masks secrets/PII
-  ↓
-Agent: Receives results with [API_KEY_1], [EMAIL_1] masked
-```
-
----
-
-## HTTP API Proxy
-
-Configure APIs as safer alternatives to raw curl:
-
-```bash
+# HTTP API (auth token read from env var specified in AUTH_ENV)
 ZARA_API_GITHUB_URL=https://api.github.com
 ZARA_API_GITHUB_AUTH=bearer
 ZARA_API_GITHUB_AUTH_ENV=GITHUB_TOKEN
-```
 
-Auth tokens are injected from env vars — they never appear in prompts or agent context. Response bodies are scanned for secrets and masked automatically.
-
----
-
-## AI Provider Proxy
-
-Configure any OpenAI-compatible provider:
-
-```bash
-ZARA_AI_OPENAI_BASE_URL=https://api.openai.com
+# AI Provider
+ZARA_AI_OPENAI_BASE_URL=https://api.openai.com/v1
 ZARA_AI_OPENAI_API_KEY_ENV=OPENAI_API_KEY
 ZARA_AI_OPENAI_MODELS=gpt-4o,gpt-4o-mini
 ```
 
-When you call `ai_chat`, the provider proxy automatically:
+### Step 3: Setup wrapper script
 
-1. **Redacts** all messages before sending (secrets → `[PLACEHOLDER]`)
-2. **Sends** the safe prompt to the LLM
-3. **Unredacts** the response before returning to agent
-
-This means you can safely include sensitive context in your prompts — it never reaches the LLM provider unmasked.
-
-Supported: **OpenAI**, **Anthropic**, **Gemini**, **DeepSeek**, **OpenRouter**, **Groq**, and any OpenAI-compatible API (Ollama, vLLM, LocalAI, etc.)
-
----
-
-## Configuration
-
-Zara Privacy MCP runs as a **sidecar process** managed by OpenCode. Once configured, OpenCode spawns the binary automatically and communicates over stdio.
-
-### 1. Build and install
+The wrapper ensures env vars are passed to the MCP process. Edit `scripts/mcp-wrapper.sh`:
 
 ```bash
-cd zara-privacy-mcp
-make install
-# Installed to /usr/local/bin/zara-privacy-mcp
-```
-
-### 2. Set environment variables
-
-Add to your `~/.zshrc` or `~/.bashrc`:
-
-```bash
-# Required for privacy features
-export ZARA_ENCRYPTION_KEY="your-strong-passphrase-min-32-chars"
-
-# Optional: Database connections
+#!/bin/sh
+export ZARA_ENCRYPTION_KEY="your-key-here"
 export ZARA_DB_PROD_DRIVER=postgres
-export ZARA_DB_PROD_DSN=postgres://user:pass@localhost:5432/mydb
-
-# Optional: HTTP APIs
-export ZARA_API_GITHUB_URL=https://api.github.com
-export ZARA_API_GITHUB_AUTH=bearer
-export ZARA_API_GITHUB_AUTH_ENV=GITHUB_TOKEN
-
-# Optional: AI Providers
-export ZARA_AI_OPENAI_BASE_URL=https://api.openai.com
-export ZARA_AI_OPENAI_API_KEY_ENV=OPENAI_API_KEY
-export ZARA_AI_OPENAI_MODELS=gpt-4o,gpt-4o-mini
+export ZARA_DB_PROD_DSN="postgres://user:pass@host:5432/mydb"
+# ... add all your env vars from .env
+exec /path/to/zara-privacy-mcp --stdio
 ```
 
-### 3. Add to `opencode.json`
+Make it executable:
 
-The MCP server is already configured in both the project and global `opencode.json`:
+```bash
+chmod +x scripts/mcp-wrapper.sh
+```
+
+### Step 4: Register MCP in OpenCode / Kiro
+
+Add to `~/.config/opencode/opencode.json`:
 
 ```json
 {
   "mcp": {
     "zara-privacy-mcp": {
       "type": "local",
-      "command": ["zara-privacy-mcp", "--stdio"],
-      "enabled": true,
-      "environment": {
-        "ZARA_ENCRYPTION_KEY": "{env:ZARA_ENCRYPTION_KEY}",
-        "ZARA_DB_PATH": "{env:ZARA_DB_PATH:~/.zara/privacymcp/mappings.db}",
-        "ZARA_LOG_LEVEL": "{env:ZARA_LOG_LEVEL:info}"
-      },
-      "timeout": 30000
+      "command": ["/absolute/path/to/scripts/mcp-wrapper.sh"],
+      "enabled": true
     }
   }
 }
 ```
 
-### 4. Restart OpenCode
-
-Close and reopen OpenCode, or reload config. OpenCode spawns `zara-privacy-mcp --stdio` on startup. All 15 tools are available to agents automatically.
-
----
-
-## Testing with Postman
-
-The HTTP server mode is the easiest way to test all 7 tools interactively.
-
-### 1. Start the HTTP server
-
-```bash
-export ZARA_ENCRYPTION_KEY="dev-key-32-bytes-long-for-testing!!"
-make run-dev
-```
-
-### 2. Import the Postman collection
-
-Import `scripts/postman-collection.json` into Postman. It contains 10 pre-built requests.
-
-### 3. JSON-RPC Protocol
-
-All tool calls use the same pattern:
-
-```
-POST http://127.0.0.1:8530/mcp
-Content-Type: application/json
-```
-
-**Initialize the session:**
+Alternative (if your MCP client passes env to child processes):
 
 ```json
 {
-    "jsonrpc": "2.0",
-    "id": 1,
-    "method": "initialize"
-}
-```
-
-**List available tools:**
-
-```json
-{
-    "jsonrpc": "2.0",
-    "id": 2,
-    "method": "list_tools"
-}
-```
-
-**Call a tool:**
-
-```json
-{
-    "jsonrpc": "2.0",
-    "id": 3,
-    "method": "call_tool",
-    "params": {
-        "name": "scan_context",
-        "arguments": {
-            "text": "My API key is sk-proj-ABCDefghijklmnopqrstuvwxyz123456"
-        }
+  "mcp": {
+    "zara-privacy-mcp": {
+      "type": "local",
+      "command": ["/absolute/path/to/zara-privacy-mcp", "--stdio"],
+      "enabled": true,
+      "env": {
+        "ZARA_ENCRYPTION_KEY": "your-key-here",
+        "ZARA_DB_PROD_DSN": "postgres://user:pass@host:5432/mydb"
+      }
     }
+  }
 }
 ```
 
-### 4. Health check
+### Step 5: Restart and verify
 
-```
-GET http://127.0.0.1:8530/health
-```
-
-Returns server status, version, and mapping store statistics.
-
-### 5. Quick curl examples
+Restart OpenCode/Kiro, then verify tools are loaded:
 
 ```bash
-# List tools
-curl -s http://127.0.0.1:8530/mcp \
-  -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"list_tools"}' | jq
-
-# Scan for secrets
-curl -s http://127.0.0.1:8530/mcp \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "jsonrpc":"2.0","id":2,"method":"call_tool",
-    "params":{"name":"scan_context","arguments":{"text":"My email is test@email.com"}}
-  }' | jq
-
-# Redact sensitive data
-curl -s http://127.0.0.1:8530/mcp \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "jsonrpc":"2.0","id":3,"method":"call_tool",
-    "params":{"name":"redact_context","arguments":{"text":"My KTP is 3172051234567890"}}
-  }' | jq
-
-# Health check
-curl http://127.0.0.1:8530/health | jq
+echo '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
+  | /path/to/scripts/mcp-wrapper.sh 2>/dev/null \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'{len(d[\"result\"][\"tools\"])} tools loaded')"
 ```
 
-### 6. Full workflow (scan → redact → send → unredact)
+Expected output: `19 tools loaded`
+
+### Optional: Install binary globally
 
 ```bash
-# 1. Scan context first
-SCAN=$(curl -s http://127.0.0.1:8530/mcp \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "jsonrpc":"2.0","id":1,"method":"call_tool",
-    "params":{"name":"scan_context",
-      "arguments":{"text":"My email is budi@example.com and key is sk-proj-ABCDefghijklmnopqrstuvwxyz123456"}}
-  }')
-echo "Scan result: $(echo $SCAN | jq '.result.content[0].json.risk_score')"
+sudo make install   # Installs to /usr/local/bin/zara-privacy-mcp
+```
 
-# 2. Redact before sending to LLM
-REDACTED=$(curl -s http://127.0.0.1:8530/mcp \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "jsonrpc":"2.0","id":2,"method":"call_tool",
-    "params":{"name":"redact_context",
-      "arguments":{"text":"My email is budi@example.com and key is sk-proj-ABCDefghijklmnopqrstuvwxyz123456"}}
-  }')
-SAFE_TEXT=$(echo $REDACTED | jq -r '.result.content[0].json.redacted')
-echo "Safe to send: $SAFE_TEXT"
+### Optional: Install agent skill
 
-# 3. After LLM responds, unredact
-LLM_RESPONSE="Your account [API_KEY_1] has been verified with email [EMAIL_1]."
-RESTORED=$(curl -s http://127.0.0.1:8530/mcp \
-  -H 'Content-Type: application/json' \
-  -d "{
-    \"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"call_tool\",
-    \"params\":{\"name\":\"unredact_response\",
-      \"arguments\":{\"text\":\"$LLM_RESPONSE\"}}
-  }")
-echo "Restored: $(echo $RESTORED | jq -r '.result.content[0].text')"
+```bash
+make install-skill  # Copies skill to ~/.agents/skills/ and ~/.claude/skills/
 ```
 
 ---
 
 ## Configuration
 
-All via environment variables (see [`.env.example`](.env.example)):
+All via environment variables. See `.env.example` for a template.
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ZARA_ENCRYPTION_KEY` | — | AES-256-GCM key (min 16 chars, **REQUIRED**) |
-| `ZARA_MCP_TRANSPORT` | `http` | Transport mode: `http` or `stdio` |
-| `ZARA_MCP_PORT` | `8530` | MCP server port (HTTP mode) |
-| `ZARA_MCP_HOST` | `127.0.0.1` | Bind address (HTTP mode) |
-| `ZARA_DB_PATH` | `~/.zara/privacymcp/mappings.db` | SQLite database path |
-| `ZARA_LOG_LEVEL` | `info` | Log verbosity |
-| `ZARA_MAX_TOKENS` | `4096` | Compression token budget |
-| `ZARA_METRICS_ENABLED` | `true` | Enable metrics server |
+### Global (required)
+
+```bash
+ZARA_ENCRYPTION_KEY="your-strong-passphrase-min-16-chars"
+```
+
+### SQL Database
+
+```bash
+# Auto-detect driver from DSN (no _DRIVER needed)
+ZARA_DB_<NAME>_DSN=postgres://user:pass@host:5432/db
+
+# Or explicit driver
+ZARA_DB_<NAME>_DRIVER=postgres|mysql|sqlserver|sqlite|oracle|clickhouse
+ZARA_DB_<NAME>_DSN=<connection_string>
+ZARA_DB_<NAME>_MAX_CONNS=10
+```
+
+Supported drivers: `postgres` (pg), `mysql` (mariadb), `sqlserver` (mssql), `sqlite` (sqlite3), `oracle` (ora), `clickhouse` (ch).
+
+### MongoDB
+
+```bash
+ZARA_MONGO_<NAME>_URI=mongodb://user:pass@host:27017
+ZARA_MONGO_<NAME>_DATABASE=mydb
+```
+
+### Redis
+
+```bash
+ZARA_REDIS_<NAME>_ADDR=host:6379
+ZARA_REDIS_<NAME>_USERNAME=optional
+ZARA_REDIS_<NAME>_PASSWORD=optional
+ZARA_REDIS_<NAME>_DB=0
+```
+
+### HTTP API
+
+```bash
+ZARA_API_<NAME>_URL=https://api.example.com
+ZARA_API_<NAME>_AUTH=bearer|basic|header|none
+ZARA_API_<NAME>_AUTH_ENV=TOKEN_ENV_VAR_NAME
+```
+
+### AI Provider
+
+```bash
+ZARA_AI_<NAME>_BASE_URL=https://api.openai.com/v1
+ZARA_AI_<NAME>_API_KEY_ENV=OPENAI_API_KEY
+ZARA_AI_<NAME>_MODELS=gpt-4o,gpt-4o-mini
+```
 
 ---
 
-## Secret Detection Coverage
+## Detection Coverage
+
+### Secrets (21 patterns)
 
 | Category | Examples |
 |----------|---------|
-| **AI API Keys** | OpenAI (`sk-proj-*`), Anthropic (`sk-ant-*`), Gemini (`AIza*`), DeepSeek |
-| **Cloud** | AWS Access Key (`AKIA*`), AWS Secret Key |
-| **Auth Tokens** | JWT (`eyJ*.*.*`), Bearer, OAuth, Session cookies |
-| **Database** | PostgreSQL, MySQL, MongoDB, Redis connection URLs |
-| **Crypto** | SSH keys, RSA/EC/PEM private keys, certificates |
-| **Generic** | High-entropy strings (Shannon entropy > 4.0) |
-| **PII (Global)** | Email, phone, credit card, IP |
-| **PII (Indonesia)** | NIK/KTP, NPWP, passport, SIM, phone |
-| **PII (Singapore)** | NRIC, FIN, passport, phone |
+| AI API Keys | OpenAI (`sk-proj-*`), Anthropic (`sk-ant-*`), Gemini (`AIza*`), DeepSeek |
+| Cloud | AWS Access Key (`AKIA*`), AWS Secret Key |
+| Auth Tokens | JWT (`eyJ*.*.*`), Bearer, OAuth, Session cookies |
+| Database URLs | PostgreSQL, MySQL, MongoDB, Redis connection strings |
+| Private Keys | SSH, RSA, EC, PEM, certificates |
+| Generic | High-entropy strings (Shannon entropy > 4.0) |
+
+### PII (15 patterns)
+
+| Locale | Patterns |
+|--------|----------|
+| Global | Email, Phone, Credit Card (Visa/MC/Amex/Discover), IP Address |
+| Indonesia | NIK/KTP, NPWP, Passport, Phone (+62), SIM, Postal Code |
+| Singapore | NRIC, FIN, Passport, Phone (+65), Postal Code |
 
 ---
 
-## Phase Roadmap
+## Development
 
-| Phase | Focus | Status |
-|-------|-------|--------|
-| **1** | Scan + Redact + Unredact (deterministic detection) | ✅ **Completed** |
-| **2** | Context compression + memory filter + metrics | ✅ **Completed** |
-| **3** | Data classification + leadership module | 🚧 **Scaffolded** |
-| **4** | Stdio transport + OpenCode MCP integration + Postman testing | ✅ **Completed** |
-| **5** | Database proxy (PostgreSQL, SQLite) + auto masking | ✅ **Completed** |
-| **6** | HTTP API proxy (safer curl with auto auth + masking) | ✅ **Completed** |
-| **7** | AI provider proxy (auto redact/unredact for any LLM) | ✅ **Completed** |
-| **8** | MySQL driver support + query parameters | 🔜 **Planned** |
-| **9** | NER/semantic secret detection (beyond regex) | 🔜 **Planned** |
-| **10** | Encrypted memory vault + audit logging | 🔜 **Planned** |
+```bash
+make build          # Build binary
+make test           # Run tests with race detection
+make test-coverage  # Generate coverage report
+make run-dev        # Run with debug logging
+make smoke          # Quick stdio smoke test
+make lint           # go vet + staticcheck
+make clean          # Remove build artifacts
+```
+
+### Hot Reload
+
+```bash
+kill -HUP $(pgrep zara-privacy-mcp)
+```
+
+Re-reads all environment variables and applies new connections without restart.
+
+---
+
+## MCP Protocol
+
+Supports both method formats:
+- Legacy: `list_tools`, `call_tool`
+- MCP Spec: `tools/list`, `tools/call`
+
+Transport modes:
+- **stdio**: Newline-delimited JSON-RPC via stdin/stdout. For MCP client integration.
+- **HTTP**: POST to `/mcp`. For development/testing with Postman.
 
 ---
 

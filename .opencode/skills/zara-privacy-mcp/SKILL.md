@@ -1,305 +1,169 @@
 ---
 name: zara-privacy-mcp
-description: Zara Privacy MCP — general-purpose privacy gateway with 15 tools: privacy layer, database proxy, HTTP API proxy, and AI provider proxy. All with automatic data masking.
+description: Zara Privacy MCP skill — 19 tools for privacy scanning, database proxy (SQL/MongoDB/Redis), HTTP API proxy, and AI provider proxy. All with automatic data masking.
 ---
 
-# Zara Privacy MCP Skill
+# Zara Privacy MCP
 
-**General-purpose privacy gateway for OpenCode.** Privacy layer + database proxy + HTTP API proxy + AI provider proxy — all with automatic data masking.
+Privacy-first MCP gateway with 19 tools. All outbound calls through MCP are automatically scanned and masked — secrets, PII, credentials never leak.
 
 ```
-Agent → MCP → DB/HTTP/AI call → masking → agent
-```
-
-> Every outbound call through the MCP is automatically masked. API keys, passwords, PII — zero leaks to external services.
-> Renamed from `zara-privacy-mcp` → `zara-privacy-mcp`. Binary: `zara-privacy-mcp`.
-
----
-
-## 15 Tools — When to Use
-
-### Privacy Layer (always ready, no configuration needed)
-
-| Tool | Trigger | Example User Query |
-|------|---------|-------------------|
-| `scan_context` | User wants to check context safety, find sensitive data | "Check if this chat has API keys or KTP numbers" |
-| `redact_context` | User wants to send context but it has sensitive data | "Mask email & API key in this chat" |
-| `unredact_response` | Response contains `[EMAIL_1]` placeholders | "Restore placeholders to original values" |
-| `compress_context` | Context is too long, needs token savings | "Compress this chat, remove unimportant tokens" |
-| `memory_filter` | Validate data before storing to memory | "Check if this memory is safe to store?" |
-| `classify_data` | Check sensitivity level (PUBLIC → SECRET) | "Is this data classified as confidential?" |
-| `store_stats` | View placeholder mapping statistics | "How many placeholders have been created?" |
-
-### Database (requires env var configuration)
-**Supported**: PostgreSQL, MySQL, MariaDB, SQL Server, SQLite.
-**Auto-detect**: just set the DSN — the driver is detected automatically from the URL format.
-
-| Tool | Trigger | Example User Query |
-|------|---------|-------------------|
-| `db_query` | Execute SQL | "Show users from production database", "Find email for id 5" |
-| `db_list_tables` | List database tables | "What tables are in the production database?" |
-| `db_describe` | Describe table schema | "Describe the users table schema" |
-
-### HTTP API (requires env var configuration)
-
-| Tool | Trigger | Example User Query |
-|------|---------|-------------------|
-| `http_request` | Call REST API (privacy curl alternative) | "GET /repos from GitHub API", "Create a new issue" |
-| `http_list_apis` | List registered APIs | "What APIs are available?" |
-
-### AI Provider (requires env var configuration)
-
-| Tool | Trigger | Example User Query |
-|------|---------|-------------------|
-| `ai_chat` | Send prompt to external LLM (OpenAI, Anthropic, etc.) via MCP | "Ask GPT-4o about this code", "Ask Claude to refactor this function" |
-| `ai_list_providers` | List registered AI providers | "What AI providers are configured?" |
-
-### Config
-
-| Tool | Trigger | Example User Query |
-|------|---------|-------------------|
-| `config_list` | List all registered connections | "What connections are active?" |
-
----
-
-## Data Flow & Security Model
-
-### Privacy Layer Flow
-```
-User: "My key is sk-proj-ABCDefghijklmnopqrstuvwxyz123456"
-  → scan_context: risk=4 (CRITICAL), secrets: [OpenAI API Key]
-  → redact_context: "My key is [API_KEY_1]"
-  → LLM responds → unredact_response restores original values
-```
-
-### Database Proxy Flow
-```
-Agent → db_query("prod", "SELECT email, api_key FROM users")
-  → MCP executes query → scans every cell → masks secrets/PII
-  → Agent gets: {rows: [{email: "[EMAIL_1]", api_key: "[API_KEY_1]"}], masked: [...]}
-```
-
-### HTTP API Proxy Flow
-```
-Agent → http_request("github", "GET", "/repos/aldok10/zara-privacy-mcp")
-  → MCP injects auth header from env → sends request → masks response
-  → Agent gets: {status_code: 200, body: "{...}", masked: [...]}
-```
-
-### AI Provider Proxy Flow
-```
-Agent → ai_chat("openai", "gpt-4o", [{role:"user", content:"My key is sk-..."}])
-  → MCP redacts messages → sends safe prompt → OpenAI responds
-  → MCP unredacts response → Agent gets clean result
-```
-
-> **Golden rule**: All masking is transparent. Agent and user don't need to think about it.
-
----
-
-## Configuration (Environment Variables)
-
-Database, HTTP API, and AI tools require env vars. Uses prefix-based naming — just add your own name.
-
-### Database
-**Supported drivers**: `postgres`, `mysql`, `mariadb`, `sqlserver`, `sqlite`
-**Aliases**: pg / postgresql (postgres), maria (mysql), mssql / microsoft (sqlserver), sqlite3 (sqlite)
-**Auto-detect**: if the driver is unknown or empty, the system detects it from the DSN format
-
-```bash
-# PostgreSQL
-ZARA_DB_PROD_DRIVER=postgres
-ZARA_DB_PROD_DSN=postgres://user:pass@host:5432/db?sslmode=require
-ZARA_DB_PROD_MAX_CONNS=10
-
-# MySQL / MariaDB
-ZARA_DB_MYSQL_DRIVER=mysql
-ZARA_DB_MYSQL_DSN=user:pass@tcp(localhost:3306)/db?charset=utf8mb4
-
-# SQL Server
-ZARA_DB_MSSQL_DRIVER=sqlserver
-ZARA_DB_MSSQL_DSN=sqlserver://user:pass@localhost:1433?database=db
-
-# SQLite
-ZARA_DB_LOCAL_DRIVER=sqlite
-ZARA_DB_LOCAL_DSN=/tmp/dev.db
-
-# Auto-detect: no need to set DRIVER
-ZARA_DB_AUTO_DSN=postgres://user:pass@localhost:5432/db  # → auto-detected as postgres
-```
-
-### HTTP API
-```bash
-ZARA_API_<NAME>_URL=https://api.github.com
-ZARA_API_<NAME>_AUTH=bearer|basic|header|none
-ZARA_API_<NAME>_AUTH_ENV=GITHUB_TOKEN
-```
-
-### AI Provider
-```bash
-ZARA_AI_<NAME>_BASE_URL=https://api.openai.com/v1
-ZARA_AI_<NAME>_API_KEY_ENV=OPENAI_API_KEY
-ZARA_AI_<NAME>_MODELS=gpt-4o,gpt-4o-mini
-```
-
-### Global
-```bash
-ZARA_ENCRYPTION_KEY="your-32-char-key-here-minimum!!"
-ZARA_DB_PATH=/path/to/mapping.db
-ZARA_LOG_LEVEL=debug|info|warn|error
+Agent → MCP → DB/HTTP/AI call → auto-mask → Agent
 ```
 
 ---
 
-## Example Scenarios
+## 19 Tools
 
-### 1. "Fetch user data from database"
-User: "Get user with email budi@example.com from production database"
-```
-Agent → db_query(database="prod", query="SELECT * FROM users WHERE email=$1", params=["budi@example.com"])
-  → Results auto-masked if sensitive data is found
-  → Display to user with masking info
-```
+### Privacy (7 tools, always available)
 
-### 2. "Create a GitHub issue"
-User: "Create a new issue titled 'Add MySQL support'"
-```
-Agent → http_request(api="github", method="POST", path="/repos/aldok10/zara-privacy-mcp/issues", body={title:"Add MySQL support"})
-  → MCP auto-injects token from env
-  → Display results
-```
+| Tool | When to Use |
+|------|-------------|
+| `scan_context` | Check text for secrets/PII. Returns risk score + findings without modifying. |
+| `redact_context` | Replace secrets/PII with `[PLACEHOLDER_N]` tokens. Safe to send to LLM. |
+| `unredact_response` | Restore original values from placeholders in LLM response. |
+| `compress_context` | Reduce tokens: dedup lines, strip comments, extract by keywords. |
+| `memory_filter` | Block high-risk data from being stored in memory. |
+| `classify_data` | Assign sensitivity: PUBLIC, INTERNAL, CONFIDENTIAL, SECRET. |
+| `store_stats` | Show placeholder mapping store statistics. |
 
-### 3. "Ask an AI about an API key"
-User: "Ask GPT-4o whether API key sk-proj-xxx is safe to use?"
-```
-Agent → ai_chat(provider="openai", model="gpt-4o", messages=[{role:"user", content:"Is the API key sk-proj-xxx safe to use?"}])
-  → MCP redacts API key before sending → OpenAI never sees the original
-  → Response is unredacted → user sees complete result
-```
+### SQL Database (3 tools)
 
-### 4. "Clean sensitive data"
-User: "There are KTP numbers and API keys in this chat, please clean them before I send it"
-```
-Agent → scan_context(text=...) → identify all sensitive data
-  → redact_context(text=...) → masking
-  → Display safe text to user
-```
+Supported: PostgreSQL, MySQL/MariaDB, SQL Server, SQLite, Oracle, ClickHouse.
+Driver auto-detected from DSN — no need to set `_DRIVER`.
+
+| Tool | When to Use |
+|------|-------------|
+| `db_query` | Execute SQL. Results auto-masked. Params: `database`, `query`, `params[]`. |
+| `db_list_tables` | List all tables in a database. |
+| `db_describe` | Show column schema (name, type, nullable, key). |
+
+### MongoDB (2 tools)
+
+| Tool | When to Use |
+|------|-------------|
+| `mongo_find` | Query documents with filter + limit. Results auto-masked. |
+| `mongo_list_collections` | List all collections in a database. |
+
+### Redis (2 tools)
+
+| Tool | When to Use |
+|------|-------------|
+| `redis_exec` | Execute any Redis command (GET, SET, HGETALL, LPUSH, etc). Results auto-masked. |
+| `redis_keys` | List keys matching a pattern. |
+
+### HTTP API (2 tools)
+
+| Tool | When to Use |
+|------|-------------|
+| `http_request` | Make HTTP call with auto-injected auth. Response auto-masked. Params: `api`, `path`, `method`, `headers`, `body`, `timeout`. |
+| `http_list_apis` | List configured API endpoints. |
+
+### AI Provider (2 tools)
+
+Supports: OpenAI, Anthropic, Gemini, DeepSeek, OpenRouter, Groq, any OpenAI-compatible.
+
+| Tool | When to Use |
+|------|-------------|
+| `ai_chat` | Send prompt to LLM. Auto-redacts before send, auto-unredacts response. |
+| `ai_list_providers` | List configured providers + models. |
+
+### Config (1 tool)
+
+| Tool | When to Use |
+|------|-------------|
+| `config_list` | Show all active connections (databases, APIs, AI providers) without exposing secrets. |
 
 ---
 
-## Install Skill
+## Detection Capabilities
 
-There are 2 ways:
+### Secrets (21 patterns)
 
-### Method 1: Via Makefile (automatic)
-```bash
-cd /path/to/zara-privacy-mcp
-make install-skill
-```
-This copies the skill to:
-- `~/.agents/skills/zara-privacy-mcp/`
-- `~/.claude/skills/zara-privacy-mcp/`
-- `.opencode/skills/zara-privacy-mcp/` (project)
+- AI keys: OpenAI (`sk-proj-*`, legacy), Anthropic (`sk-ant-*`), Gemini (`AIza*`), DeepSeek
+- Cloud: AWS Access Key (`AKIA*`), AWS Secret Key
+- Tokens: JWT (`eyJ*`), Bearer, OAuth/session tokens
+- Private keys: SSH, RSA, EC, PEM
+- Database URLs: PostgreSQL, MySQL, MongoDB, Redis connection strings
+- URLs with embedded credentials
+- High-entropy generic strings (Shannon entropy > 4.0)
 
-### Method 2: Manual
-```bash
-# Copy to global agent directory
-cp -r .opencode/skills/zara-privacy-mcp ~/.agents/skills/
+### PII (15 patterns)
 
-# Copy to Claude skills
-cp -r .opencode/skills/zara-privacy-mcp ~/.claude/skills/
-```
+- **Global**: Email, Phone, Credit Card (Visa/MC/Amex/Discover), IP Address
+- **Indonesia**: NIK/KTP, NPWP, Passport, Phone (+62), SIM, Postal Code
+- **Singapore**: NRIC, FIN, Phone (+65), Passport, Postal Code
 
 ---
 
-## Database Query Best Practices (DNA)
+## Database Query Rules
 
-When using `db_query`, ALWAYS follow these rules to avoid heavy queries that can kill production databases.
+When using `db_query`, always follow these to avoid killing production databases.
 
-### Mandatory Rules
+### Mandatory
 
-1. **Always use LIMIT** — never run unbounded SELECT. Default LIMIT 50 unless user specifies.
-2. **Always use WHERE** — full table scans are forbidden. Filter by indexed columns first.
-3. **Use parameterized queries** — never concatenate user input into SQL strings.
-4. **Prefer COUNT before SELECT** — if unsure how many rows, count first to gauge size.
-5. **Never SELECT \*** on large tables — pick only needed columns.
+1. **Always LIMIT** — default 50, never unbounded SELECT
+2. **Always WHERE** — no full table scans
+3. **Parameterized queries** — use `?` or `$1`, never string concat
+4. **COUNT first if unsure** — estimate size before fetching rows
+5. **Specific columns** on large tables — no `SELECT *` unless single row
 
 ### Index Awareness
 
-Before writing queries, think about which columns are likely indexed:
-- Primary keys (id, login, deal)
-- Foreign keys (login on deals/orders tables)
-- Timestamp/date columns used in WHERE (Time, Registration, LastAccess)
-- Columns with UNIQUE constraints (Email, ExternalID)
+Filter on indexed columns first:
+- Primary keys: `id`, `Login`, `Deal`, `Order`
+- Foreign keys: `Login` on deals/orders/positions
+- Timestamps: `Time`, `Registration`, `LastAccess`
+- Unique: `Email`, `ExternalID`
 
-**Good** (uses indexed columns):
 ```sql
+-- Good: indexed columns in WHERE
 SELECT * FROM mt5_deals WHERE Login = ? AND Time >= ? LIMIT 50
+
+-- Bad: full scan on non-indexed column
+SELECT * FROM mt5_deals WHERE Comment LIKE '%text%'
 ```
 
-**Bad** (full scan, no index on Comment):
-```sql
-SELECT * FROM mt5_deals WHERE Comment LIKE '%something%'
-```
+### Optimization Patterns
 
-### Query Optimization Patterns
+| Need | Do | Don't |
+|------|-----|-------|
+| Time filter | `WHERE Time >= ? AND Time < ?` | `WHERE DATE(Time) = '...'` (kills index) |
+| Aggregate | `GROUP BY Login` + `LIMIT` | `SELECT *` + `GROUP BY` |
+| Existence | `SELECT 1 ... LIMIT 1` | `SELECT COUNT(*) FROM full_table` |
+| Join | On indexed FK only | Cross-join or non-indexed join |
+| Sort | `ORDER BY indexed_col LIMIT n` | `ORDER BY` without LIMIT |
 
-| Pattern | Do | Don't |
-|---------|-----|-------|
-| Filter by time | `WHERE Time >= ? AND Time < ?` | `WHERE DATE(Time) = '2026-01-01'` (kills index) |
-| Aggregate | `SELECT COUNT(*), SUM(Profit) ... GROUP BY Login LIMIT 50` | `SELECT * ... GROUP BY` (returns all rows) |
-| Pagination | `LIMIT 50 OFFSET 0` | No LIMIT at all |
-| Existence check | `SELECT 1 FROM table WHERE ... LIMIT 1` | `SELECT COUNT(*) FROM table` (scans all) |
-| Join | Join on indexed FK columns only | Cross-join or join on non-indexed columns |
-| Sort | `ORDER BY indexed_column` | `ORDER BY non_indexed_column` on large result |
+### Anti-patterns (never do)
 
-### Avoid These
-
-- `SELECT *` on tables with 100k+ rows without WHERE
-- `LIKE '%pattern%'` (no index, full scan)
-- Functions on indexed columns in WHERE: `WHERE YEAR(Time) = 2026`
+- `SELECT *` on 100k+ rows without WHERE
+- `LIKE '%x%'` full scan
+- Functions on indexed cols: `WHERE YEAR(Time) = 2026`
 - Subqueries that scan full tables
-- `ORDER BY` without LIMIT on large results
-- Multiple JOINs without proper WHERE filters
-- `DISTINCT` on non-indexed columns with large datasets
+- `DISTINCT` on non-indexed columns
+- Multiple JOINs without proper WHERE
 
-### Size Estimation Before Query
+### Workflow
 
-If user asks for data and you're unsure of volume:
-```sql
--- Step 1: estimate size
-SELECT COUNT(*) FROM table WHERE <filters>
+1. Identify table + filter columns
+2. If unsure: `SELECT COUNT(*) FROM t WHERE <filter>` first
+3. If count > 1000: narrow filter or increase LIMIT awareness
+4. Aggregate first (COUNT/SUM/GROUP BY), detail later
+5. Results come back auto-masked — display directly
 
--- Step 2: if count > 1000, add stricter filters or LIMIT
--- Step 3: if count is manageable, proceed with full query
-```
+### CTE (When Needed)
 
-### Aggregation First, Detail Later
+Use CTE for:
+- Multi-step aggregation (filter → aggregate → join details)
+- Period comparison (this week vs last week)
+- Reusing same subquery result multiple times
+- Running totals / window functions
 
-When user asks "show me deposits on date X":
-1. First: summarize with GROUP BY + COUNT + SUM (lightweight)
-2. Then: if user wants detail, query with LIMIT + specific filters
-
-### CTE (Common Table Expressions)
-
-Use CTEs when the query has multi-step logic that would otherwise require nested subqueries or repeated expressions. CTEs improve readability and let the optimizer handle each step.
-
-**When to use CTE:**
-- Multi-step aggregation (filter → aggregate → rank/sort)
-- Reusing the same subquery result in multiple places
-- Breaking complex business logic into readable named steps
-- Recursive queries (hierarchies, tree structures)
-
-**When NOT to use CTE:**
-- Simple single-table queries — CTE adds overhead for nothing
-- When a plain WHERE + GROUP BY is sufficient
-- On MySQL < 8.0 (CTEs not supported)
-
-**Examples:**
+Don't use CTE when plain WHERE + GROUP BY is enough.
 
 ```sql
--- Multi-step: find top depositors then get their details
-WITH daily_deposits AS (
+-- Multi-step: top depositors + user details
+WITH deposits AS (
   SELECT Login, COUNT(*) as cnt, SUM(Profit) as total
   FROM mt5_deals
   WHERE Action = 2 AND Profit > 0
@@ -307,15 +171,14 @@ WITH daily_deposits AS (
   GROUP BY Login
   HAVING total > 1000
 )
-SELECT d.Login, d.cnt, d.total, u.Name, u.Group
-FROM daily_deposits d
+SELECT d.*, u.Name, u.Group
+FROM deposits d
 JOIN mt5_users u ON d.Login = u.Login
-ORDER BY d.total DESC
-LIMIT 20
+ORDER BY d.total DESC LIMIT 20
 ```
 
 ```sql
--- Compare periods: deposit this week vs last week per login
+-- Period comparison
 WITH this_week AS (
   SELECT Login, SUM(Profit) as total
   FROM mt5_deals
@@ -331,40 +194,74 @@ last_week AS (
     AND Time < DATE_SUB(CURDATE(), INTERVAL 7 DAY)
   GROUP BY Login
 )
-SELECT COALESCE(t.Login, l.Login) as Login,
-       COALESCE(t.total, 0) as this_week,
-       COALESCE(l.total, 0) as last_week
-FROM this_week t
-LEFT JOIN last_week l ON t.Login = l.Login
-ORDER BY this_week DESC
-LIMIT 30
+SELECT COALESCE(tw.Login, lw.Login) as Login,
+       COALESCE(tw.total, 0) as this_week,
+       COALESCE(lw.total, 0) as last_week
+FROM this_week tw
+LEFT JOIN last_week lw ON tw.Login = lw.Login
+ORDER BY this_week DESC LIMIT 30
 ```
 
 ```sql
--- Running total / cumulative sum
-WITH ordered_deals AS (
-  SELECT Deal, Login, Profit, Time,
-         SUM(Profit) OVER (PARTITION BY Login ORDER BY Time) as running_balance
+-- Running balance
+WITH ordered AS (
+  SELECT Deal, Profit, Time,
+         SUM(Profit) OVER (ORDER BY Time) as running_balance
   FROM mt5_deals
   WHERE Login = ? AND Action = 2
-  ORDER BY Time
 )
-SELECT * FROM ordered_deals LIMIT 50
+SELECT * FROM ordered LIMIT 50
 ```
 
-**CTE rules:**
-- Always LIMIT the final SELECT
-- Filter early inside the CTE (WHERE on indexed columns)
-- Keep CTEs small — don't scan full tables inside a CTE
-- Name CTEs clearly to describe what they contain
+CTE rules:
+- Always LIMIT final SELECT
+- Filter early inside CTE (WHERE on indexed cols)
+- Keep CTEs small — never scan full tables inside
+- Name CTEs descriptively
 
 ---
 
-## Important Notes
+## Configuration
 
-- **Database/API/AI tools need configuration** — if you get an "unknown database" error, guide the user to set the environment variables
-- **Privacy tools are always ready** — as long as `ZARA_ENCRYPTION_KEY` is set
-- **Masking is automatic** — the agent does not need to explicitly request masking
-- **Credentials never appear in prompts** — all auth comes from env vars, injected by the MCP
-- **Fallback**: if the MCP does not respond, fall back to manual methods
-- **Testing**: `zara-privacy-mcp` (HTTP) or `zara-privacy-mcp --stdio` (sidecar)
+All via environment variables with prefix-based naming.
+
+```bash
+# SQL Database
+ZARA_DB_<NAME>_DRIVER=postgres|mysql|sqlserver|sqlite|oracle|clickhouse
+ZARA_DB_<NAME>_DSN=<connection_string>
+ZARA_DB_<NAME>_MAX_CONNS=10
+
+# MongoDB
+ZARA_MONGO_<NAME>_URI=mongodb://host:27017
+ZARA_MONGO_<NAME>_DATABASE=mydb
+
+# Redis
+ZARA_REDIS_<NAME>_ADDR=host:6379
+ZARA_REDIS_<NAME>_PASSWORD=secret
+ZARA_REDIS_<NAME>_DB=0
+
+# HTTP API
+ZARA_API_<NAME>_URL=https://api.example.com
+ZARA_API_<NAME>_AUTH=bearer|basic|header|none
+ZARA_API_<NAME>_AUTH_ENV=TOKEN_VAR_NAME
+
+# AI Provider
+ZARA_AI_<NAME>_BASE_URL=https://api.openai.com/v1
+ZARA_AI_<NAME>_API_KEY_ENV=OPENAI_API_KEY
+ZARA_AI_<NAME>_MODELS=gpt-4o,gpt-4o-mini
+
+# Global
+ZARA_ENCRYPTION_KEY=<min-16-chars>
+ZARA_DB_PATH=~/.zara/privacymcp/mappings.db
+```
+
+---
+
+## Important Behavior
+
+- **All masking is automatic** — agent does not need to explicitly mask
+- **Credentials never appear in prompts** — auth injected from env vars by MCP
+- **Privacy tools always ready** — only need `ZARA_ENCRYPTION_KEY`
+- **DB/API/AI tools need env vars** — if "unknown database" error, check configuration
+- **Hot reload**: `kill -HUP` to reload config without restart
+- **Transport**: `--stdio` for MCP client, HTTP for standalone/testing
