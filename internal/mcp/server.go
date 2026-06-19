@@ -292,12 +292,14 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleInitialize(req rpcRequest) interface{} {
 	return map[string]interface{}{
-		"server_name":      s.cfg.ServerName,
-		"server_version":   s.cfg.ServerVersion,
-		"protocol_version": "2025-03-26",
+		"protocolVersion": "2025-03-26",
+		"serverInfo": map[string]interface{}{
+			"name":    s.cfg.ServerName,
+			"version": s.cfg.ServerVersion,
+		},
 		"capabilities": map[string]interface{}{
 			"tools": map[string]interface{}{
-				"list_changed": true,
+				"listChanged": true,
 			},
 		},
 	}
