@@ -1,17 +1,18 @@
 ---
 name: zara-privacy-mcp
-description: Zara Privacy MCP — general-purpose secure gateway with 15 tools: privacy layer, database proxy, HTTP API proxy, and AI provider proxy. All with automatic data masking.
+description: Zara Privacy MCP — general-purpose privacy gateway with 15 tools: privacy layer, database proxy, HTTP API proxy, and AI provider proxy. All with automatic data masking.
 ---
 
 # Zara Privacy MCP Skill
 
-**General-purpose secure gateway for OpenCode.** Privacy layer + database proxy + HTTP API proxy + AI provider proxy — all with automatic data masking.
+**General-purpose privacy gateway for OpenCode.** Privacy layer + database proxy + HTTP API proxy + AI provider proxy — all with automatic data masking.
 
 ```
 Agent → MCP → DB/HTTP/AI call → masking → agent
 ```
 
 > Every outbound call through the MCP is automatically masked. API keys, passwords, PII — zero leaks to external services.
+> Renamed from `zara-privacy-mcp` → `zara-privacy-mcp`. Binary: `zara-privacy-mcp`.
 
 ---
 
@@ -43,7 +44,7 @@ Agent → MCP → DB/HTTP/AI call → masking → agent
 
 | Tool | Trigger | Example User Query |
 |------|---------|-------------------|
-| `http_request` | Call REST API (secure curl alternative) | "GET /repos from GitHub API", "Create a new issue" |
+| `http_request` | Call REST API (privacy curl alternative) | "GET /repos from GitHub API", "Create a new issue" |
 | `http_list_apis` | List registered APIs | "What APIs are available?" |
 
 ### AI Provider (requires env var configuration)
@@ -208,6 +209,154 @@ cp -r .opencode/skills/zara-privacy-mcp ~/.agents/skills/
 # Copy to Claude skills
 cp -r .opencode/skills/zara-privacy-mcp ~/.claude/skills/
 ```
+
+---
+
+## Database Query Best Practices (DNA)
+
+When using `db_query`, ALWAYS follow these rules to avoid heavy queries that can kill production databases.
+
+### Mandatory Rules
+
+1. **Always use LIMIT** — never run unbounded SELECT. Default LIMIT 50 unless user specifies.
+2. **Always use WHERE** — full table scans are forbidden. Filter by indexed columns first.
+3. **Use parameterized queries** — never concatenate user input into SQL strings.
+4. **Prefer COUNT before SELECT** — if unsure how many rows, count first to gauge size.
+5. **Never SELECT \*** on large tables — pick only needed columns.
+
+### Index Awareness
+
+Before writing queries, think about which columns are likely indexed:
+- Primary keys (id, login, deal)
+- Foreign keys (login on deals/orders tables)
+- Timestamp/date columns used in WHERE (Time, Registration, LastAccess)
+- Columns with UNIQUE constraints (Email, ExternalID)
+
+**Good** (uses indexed columns):
+```sql
+SELECT * FROM mt5_deals WHERE Login = ? AND Time >= ? LIMIT 50
+```
+
+**Bad** (full scan, no index on Comment):
+```sql
+SELECT * FROM mt5_deals WHERE Comment LIKE '%something%'
+```
+
+### Query Optimization Patterns
+
+| Pattern | Do | Don't |
+|---------|-----|-------|
+| Filter by time | `WHERE Time >= ? AND Time < ?` | `WHERE DATE(Time) = '2026-01-01'` (kills index) |
+| Aggregate | `SELECT COUNT(*), SUM(Profit) ... GROUP BY Login LIMIT 50` | `SELECT * ... GROUP BY` (returns all rows) |
+| Pagination | `LIMIT 50 OFFSET 0` | No LIMIT at all |
+| Existence check | `SELECT 1 FROM table WHERE ... LIMIT 1` | `SELECT COUNT(*) FROM table` (scans all) |
+| Join | Join on indexed FK columns only | Cross-join or join on non-indexed columns |
+| Sort | `ORDER BY indexed_column` | `ORDER BY non_indexed_column` on large result |
+
+### Avoid These
+
+- `SELECT *` on tables with 100k+ rows without WHERE
+- `LIKE '%pattern%'` (no index, full scan)
+- Functions on indexed columns in WHERE: `WHERE YEAR(Time) = 2026`
+- Subqueries that scan full tables
+- `ORDER BY` without LIMIT on large results
+- Multiple JOINs without proper WHERE filters
+- `DISTINCT` on non-indexed columns with large datasets
+
+### Size Estimation Before Query
+
+If user asks for data and you're unsure of volume:
+```sql
+-- Step 1: estimate size
+SELECT COUNT(*) FROM table WHERE <filters>
+
+-- Step 2: if count > 1000, add stricter filters or LIMIT
+-- Step 3: if count is manageable, proceed with full query
+```
+
+### Aggregation First, Detail Later
+
+When user asks "show me deposits on date X":
+1. First: summarize with GROUP BY + COUNT + SUM (lightweight)
+2. Then: if user wants detail, query with LIMIT + specific filters
+
+### CTE (Common Table Expressions)
+
+Use CTEs when the query has multi-step logic that would otherwise require nested subqueries or repeated expressions. CTEs improve readability and let the optimizer handle each step.
+
+**When to use CTE:**
+- Multi-step aggregation (filter → aggregate → rank/sort)
+- Reusing the same subquery result in multiple places
+- Breaking complex business logic into readable named steps
+- Recursive queries (hierarchies, tree structures)
+
+**When NOT to use CTE:**
+- Simple single-table queries — CTE adds overhead for nothing
+- When a plain WHERE + GROUP BY is sufficient
+- On MySQL < 8.0 (CTEs not supported)
+
+**Examples:**
+
+```sql
+-- Multi-step: find top depositors then get their details
+WITH daily_deposits AS (
+  SELECT Login, COUNT(*) as cnt, SUM(Profit) as total
+  FROM mt5_deals
+  WHERE Action = 2 AND Profit > 0
+    AND Time >= '2026-06-01' AND Time < '2026-06-02'
+  GROUP BY Login
+  HAVING total > 1000
+)
+SELECT d.Login, d.cnt, d.total, u.Name, u.Group
+FROM daily_deposits d
+JOIN mt5_users u ON d.Login = u.Login
+ORDER BY d.total DESC
+LIMIT 20
+```
+
+```sql
+-- Compare periods: deposit this week vs last week per login
+WITH this_week AS (
+  SELECT Login, SUM(Profit) as total
+  FROM mt5_deals
+  WHERE Action = 2 AND Profit > 0
+    AND Time >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+  GROUP BY Login
+),
+last_week AS (
+  SELECT Login, SUM(Profit) as total
+  FROM mt5_deals
+  WHERE Action = 2 AND Profit > 0
+    AND Time >= DATE_SUB(CURDATE(), INTERVAL 14 DAY)
+    AND Time < DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+  GROUP BY Login
+)
+SELECT COALESCE(t.Login, l.Login) as Login,
+       COALESCE(t.total, 0) as this_week,
+       COALESCE(l.total, 0) as last_week
+FROM this_week t
+LEFT JOIN last_week l ON t.Login = l.Login
+ORDER BY this_week DESC
+LIMIT 30
+```
+
+```sql
+-- Running total / cumulative sum
+WITH ordered_deals AS (
+  SELECT Deal, Login, Profit, Time,
+         SUM(Profit) OVER (PARTITION BY Login ORDER BY Time) as running_balance
+  FROM mt5_deals
+  WHERE Login = ? AND Action = 2
+  ORDER BY Time
+)
+SELECT * FROM ordered_deals LIMIT 50
+```
+
+**CTE rules:**
+- Always LIMIT the final SELECT
+- Filter early inside the CTE (WHERE on indexed columns)
+- Keep CTEs small — don't scan full tables inside a CTE
+- Name CTEs clearly to describe what they contain
 
 ---
 
