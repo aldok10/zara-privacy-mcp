@@ -257,6 +257,112 @@ ZARA_DB_PATH=~/.zara/privacymcp/mappings.db
 
 ---
 
+## Security Shield (Defense-in-Depth)
+
+Inspired by [openclaw-shield](https://github.com/knostic/openclaw-shield). Five layers of protection applied at the skill/agent level.
+
+### L1: Prompt Guard (Active)
+
+Security policy is embedded in this skill. The agent knows the rules before any tool call.
+
+### L2: Output Scanner (Active — automatic)
+
+All tool results (db_query, http_request, redis_exec, mongo_find) are auto-scanned and masked before reaching the agent/user. Secrets and PII never appear in output.
+
+### L3: Destructive Command Blocker
+
+**NEVER execute these SQL patterns through `db_query`:**
+
+- `DROP TABLE`, `DROP DATABASE`, `DROP INDEX`
+- `TRUNCATE TABLE`
+- `DELETE FROM <table>` without WHERE clause
+- `UPDATE <table> SET` without WHERE clause
+- `ALTER TABLE ... DROP COLUMN`
+- `GRANT`, `REVOKE` (privilege escalation)
+- Any DDL on production databases
+
+**NEVER execute these Redis commands through `redis_exec`:**
+
+- `FLUSHDB`, `FLUSHALL`
+- `DEL` with wildcard patterns
+- `KEYS *` on production (use `SCAN` instead)
+- `CONFIG SET`
+- `SHUTDOWN`, `DEBUG`
+
+**NEVER make these HTTP calls through `http_request`:**
+
+- `DELETE` on critical resource paths without explicit user confirmation
+- Any request to internal/admin endpoints unless user specifically asks
+
+**If user requests a destructive operation:**
+1. State the risk clearly
+2. Ask for explicit confirmation
+3. Only proceed after user says "yes" or equivalent
+
+### L4: Input Audit
+
+When user provides text that contains secrets (API keys, passwords, connection strings):
+1. Use `scan_context` to detect and report
+2. Warn the user their input contains sensitive data
+3. Offer to `redact_context` before processing further
+
+### L5: Security Gate (Query Validation)
+
+Before executing any `db_query`, validate:
+
+| Check | Action |
+|-------|--------|
+| No WHERE on UPDATE/DELETE | **BLOCK** — refuse to execute |
+| Query affects > 1 table (multi-table DELETE/UPDATE) | **BLOCK** — ask user to confirm |
+| Query reads sensitive tables (.env, credentials, secrets, tokens) | **WARN** — inform user result will be masked |
+| Query contains UNION (potential injection) | **BLOCK** — refuse |
+| Query has semicolons (multi-statement) | **BLOCK** — refuse |
+| Comment sequences (`--`, `/*`) in user-provided params | **BLOCK** — potential injection |
+
+### Injection Prevention
+
+When constructing SQL from user input:
+- **Always use parameterized queries** (`?` placeholders) — never string interpolation
+- **Never pass user text directly into query string** — always via `params[]`
+- **Validate table/column names** — if user provides table name, verify it exists via `db_list_tables` first
+- **Reject suspicious patterns**: `'; DROP`, `OR 1=1`, `UNION SELECT`, `INTO OUTFILE`
+
+### File/Path Security (HTTP Proxy)
+
+When using `http_request`, never request paths that expose:
+- `/etc/shadow`, `/etc/passwd`
+- `.env`, `.git/config`, `.aws/credentials`
+- `*.pem`, `*.key`, `*.p12`
+- Admin panels (`/admin`, `/wp-admin`, `/_internal`)
+- Debug endpoints (`/debug`, `/actuator`, `/metrics`)
+
+### Security Decision Flow
+
+```
+User request
+    │
+    ▼
+Is it destructive? (DROP, DELETE without WHERE, FLUSH, etc.)
+    ├── YES → BLOCK + explain why + ask confirmation
+    │
+    ▼
+Does it contain injection patterns? (UNION, semicolons, --, etc.)
+    ├── YES → BLOCK + refuse
+    │
+    ▼
+Does input contain secrets/PII?
+    ├── YES → WARN + offer to redact
+    │
+    ▼
+Is it a heavy query? (no WHERE, no LIMIT, full scan)
+    ├── YES → REFUSE + suggest optimized version
+    │
+    ▼
+PROCEED → execute via MCP → results auto-masked
+```
+
+---
+
 ## Important Behavior
 
 - **All masking is automatic** — agent does not need to explicitly mask
