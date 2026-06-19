@@ -1,13 +1,21 @@
-// Package config centralizes all configuration for the Zara Privacy MCP server.
+// Package config centralizes all configuration for the Zara Secure MCP Gateway.
 package config
 
 import (
+	"fmt"
 	"os"
+	"sort"
 	"strconv"
+	"strings"
 )
+
+// ─── Core Config ────────────────────────────────────────────────────────────
 
 // Config holds all configuration for the MCP server.
 type Config struct {
+	// Transport: "http" or "stdio"
+	Transport      string
+
 	// Server
 	Port           string
 	Host           string
@@ -20,13 +28,12 @@ type Config struct {
 	// Encryption
 	EncryptionKey  string
 
-	// Storage
+	// Storage (mapping store)
 	DBPath         string
-	DBType         string // "sqlite" or "postgres"
 
 	// Scanning
 	DefaultLocales []string
-	MaxContextSize int // in bytes
+	MaxContextSize int
 
 	// Compression
 	MaxTokens      int
@@ -35,32 +42,362 @@ type Config struct {
 	// Metrics
 	MetricsEnable  bool
 	MetricsPort    string
+
+	// OpenObserve
+	ObserveEnable  bool
+	ObserveURL     string
+	ObserveUser    string
+	ObserveKey     string
+	ObserveStream  string
+
+	// Hot-reload
+	ReloadSignal   bool // enable SIGHUP reload
+
+	// External connections (parsed from env)
+	Databases     map[string]DBConfig
+	MongoDBs      map[string]MongoDBConfig
+	RedisDBs      map[string]RedisDBConfig
+	APIs          map[string]APIConfig
+	AIProviders   map[string]AIProviderConfig
 }
+
+// ─── Database Config ────────────────────────────────────────────────────────
+
+// DBConfig represents a database connection (SQL).
+type DBConfig struct {
+	Name     string
+	Driver   string // "postgres", "mysql", "sqlite", "sqlserver", "oracle", "clickhouse"
+	DSN      string
+	MaxConns int
+}
+
+// MongoDBConfig represents a MongoDB connection.
+type MongoDBConfig struct {
+	Name     string
+	URI      string
+	Database string
+}
+
+// RedisDBConfig represents a Redis connection.
+type RedisDBConfig struct {
+	Name     string
+	Addr     string
+	Password string
+	DB       int
+}
+
+// ─── HTTP API Config ────────────────────────────────────────────────────────
+
+// APIConfig represents an external API endpoint.
+type APIConfig struct {
+	Name     string
+	BaseURL  string
+	AuthType string // "none", "bearer", "basic", "header"
+	AuthEnv  string // env var name for token/password
+	Headers  map[string]string
+}
+
+// ─── AI Provider Config ─────────────────────────────────────────────────────
+
+// AIProviderConfig represents an AI/LLM provider.
+type AIProviderConfig struct {
+	Name     string
+	BaseURL  string
+	APIKey   string // resolved from env var
+	Models   []string
+}
+
+// ─── Load ───────────────────────────────────────────────────────────────────
 
 // Load reads configuration from environment variables with sensible defaults.
 func Load() *Config {
-	return &Config{
+	c := &Config{
+		Transport:      getEnv("ZARA_MCP_TRANSPORT", "http"),
 		Port:           getEnv("ZARA_MCP_PORT", "8530"),
 		Host:           getEnv("ZARA_MCP_HOST", "127.0.0.1"),
 		LogLevel:       getEnv("ZARA_LOG_LEVEL", "info"),
 
-		ServerName:     getEnv("ZARA_MCP_NAME", "zara-privacy-mcp"),
-		ServerVersion:  getEnv("ZARA_MCP_VERSION", "0.1.0"),
+		ServerName:     getEnv("ZARA_MCP_NAME", "zara-secure-mcp"),
+		ServerVersion:  getEnv("ZARA_MCP_VERSION", "0.2.0"),
 
 		EncryptionKey:  getEnv("ZARA_ENCRYPTION_KEY", ""),
 		DBPath:         getEnv("ZARA_DB_PATH", "~/.zara/privacymcp/mappings.db"),
-		DBType:         getEnv("ZARA_DB_TYPE", "sqlite"),
 
 		DefaultLocales: []string{"id", "sg", "global"},
-		MaxContextSize: getEnvInt("ZARA_MAX_CONTEXT_BYTES", 1024*1024), // 1MB
+		MaxContextSize: getEnvInt("ZARA_MAX_CONTEXT_BYTES", 1024*1024),
 
 		MaxTokens:      getEnvInt("ZARA_MAX_TOKENS", 4096),
 		CompressEnable: getEnvBool("ZARA_COMPRESS_ENABLED", true),
 
 		MetricsEnable:  getEnvBool("ZARA_METRICS_ENABLED", true),
 		MetricsPort:    getEnv("ZARA_METRICS_PORT", "8531"),
+
+		ObserveEnable:  getEnvBool("ZARA_OBSERVE_ENABLED", false),
+		ObserveURL:     getEnv("ZARA_OBSERVE_URL", ""),
+		ObserveUser:    getEnv("ZARA_OBSERVE_USER", ""),
+		ObserveKey:     getEnv("ZARA_OBSERVE_KEY", ""),
+		ObserveStream:  getEnv("ZARA_OBSERVE_STREAM", "zara-mcp"),
+
+		ReloadSignal:   getEnvBool("ZARA_RELOAD_ENABLED", true),
+
+		Databases:     make(map[string]DBConfig),
+		MongoDBs:      make(map[string]MongoDBConfig),
+		RedisDBs:      make(map[string]RedisDBConfig),
+		APIs:          make(map[string]APIConfig),
+		AIProviders:   make(map[string]AIProviderConfig),
+	}
+
+	c.parseDatabases()
+	c.parseMongoDBs()
+	c.parseRedisDBs()
+	c.parseAPIs()
+	c.parseAIProviders()
+
+	return c
+}
+
+// ─── Database Config Parsing ────────────────────────────────────────────────
+//
+// Format:
+//   ZARA_DB_<NAME>_DRIVER=postgres|mysql|sqlite
+//   ZARA_DB_<NAME>_DSN=postgres://user:pass@host:5432/db
+//   ZARA_DB_<NAME>_MAX_CONNS=10 (optional, default 5)
+
+func (c *Config) parseDatabases() {
+	prefix := "ZARA_DB_"
+	suffixes := []string{"_DRIVER", "_DSN", "_MAX_CONNS"}
+
+	names := c.collectNames(prefix, suffixes)
+	for _, name := range names {
+		driver := getEnv(prefix+name+"_DRIVER", "postgres")
+		dsn := getEnv(prefix+name+"_DSN", "")
+		maxConns := getEnvInt(prefix+name+"_MAX_CONNS", 5)
+
+		if dsn == "" {
+			continue
+		}
+
+		c.Databases[name] = DBConfig{
+			Name:     name,
+			Driver:   driver,
+			DSN:      dsn,
+			MaxConns: maxConns,
+		}
 	}
 }
+
+// ─── MongoDB Config Parsing ─────────────────────────────────────────────────
+//
+// Format:
+//   ZARA_MONGO_<NAME>_URI=mongodb://user:pass@host:27017
+//   ZARA_MONGO_<NAME>_DATABASE=mydb
+
+func (c *Config) parseMongoDBs() {
+	prefix := "ZARA_MONGO_"
+	suffixes := []string{"_URI", "_DATABASE"}
+
+	names := c.collectNames(prefix, suffixes)
+	for _, name := range names {
+		uri := getEnv(prefix+name+"_URI", "")
+		database := getEnv(prefix+name+"_DATABASE", "")
+
+		if uri == "" || database == "" {
+			continue
+		}
+
+		c.MongoDBs[name] = MongoDBConfig{
+			Name:     name,
+			URI:      uri,
+			Database: database,
+		}
+	}
+}
+
+// ─── Redis Config Parsing ───────────────────────────────────────────────────
+//
+// Format:
+//   ZARA_REDIS_<NAME>_ADDR=localhost:6379
+//   ZARA_REDIS_<NAME>_PASSWORD=optional
+//   ZARA_REDIS_<NAME>_DB=0 (optional, default 0)
+
+func (c *Config) parseRedisDBs() {
+	prefix := "ZARA_REDIS_"
+	suffixes := []string{"_ADDR", "_PASSWORD", "_DB"}
+
+	names := c.collectNames(prefix, suffixes)
+	for _, name := range names {
+		addr := getEnv(prefix+name+"_ADDR", "")
+		if addr == "" {
+			continue
+		}
+
+		c.RedisDBs[name] = RedisDBConfig{
+			Name:     name,
+			Addr:     addr,
+			Password: getEnv(prefix+name+"_PASSWORD", ""),
+			DB:       getEnvInt(prefix+name+"_DB", 0),
+		}
+	}
+}
+
+// ─── HTTP API Config Parsing ────────────────────────────────────────────────
+//
+// Format:
+//   ZARA_API_<NAME>_URL=https://api.example.com
+//   ZARA_API_<NAME>_AUTH=bearer|basic|header|none (optional)
+//   ZARA_API_<NAME>_AUTH_ENV=GITHUB_TOKEN (env var name for token)
+//   ZARA_API_<NAME>_HEADER_<K> = custom header value
+
+func (c *Config) parseAPIs() {
+	prefix := "ZARA_API_"
+	suffixes := []string{"_URL", "_AUTH", "_AUTH_ENV"}
+
+	names := c.collectNames(prefix, suffixes)
+	for _, name := range names {
+		baseURL := getEnv(prefix+name+"_URL", "")
+		if baseURL == "" {
+			continue
+		}
+
+		authType := getEnv(prefix+name+"_AUTH", "none")
+		authEnv := getEnv(prefix+name+"_AUTH_ENV", "")
+
+		// Collect custom headers: ZARA_API_<NAME>_HEADER_<KEY>
+		headers := make(map[string]string)
+		headerPrefix := prefix + name + "_HEADER_"
+		for _, env := range os.Environ() {
+			if !strings.HasPrefix(env, headerPrefix) {
+				continue
+			}
+			parts := strings.SplitN(env, "=", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			key := strings.TrimPrefix(parts[0], headerPrefix)
+			key = strings.ReplaceAll(key, "_", "-")
+			headers[key] = parts[1]
+		}
+
+		c.APIs[name] = APIConfig{
+			Name:     name,
+			BaseURL:  strings.TrimRight(baseURL, "/"),
+			AuthType: authType,
+			AuthEnv:  authEnv,
+			Headers:  headers,
+		}
+	}
+}
+
+// ─── AI Provider Config Parsing ─────────────────────────────────────────────
+//
+// Format:
+//   ZARA_AI_<NAME>_BASE_URL=https://api.openai.com
+//   ZARA_AI_<NAME>_API_KEY_ENV=OPENAI_API_KEY (env var containing the key)
+//   ZARA_AI_<NAME>_MODELS=gpt-4o,gpt-4o-mini (comma-separated)
+
+func (c *Config) parseAIProviders() {
+	prefix := "ZARA_AI_"
+	suffixes := []string{"_BASE_URL", "_API_KEY_ENV", "_MODELS"}
+
+	names := c.collectNames(prefix, suffixes)
+	for _, name := range names {
+		baseURL := getEnv(prefix+name+"_BASE_URL", "")
+		if baseURL == "" {
+			continue
+		}
+
+		apiKeyEnv := getEnv(prefix+name+"_API_KEY_ENV", "")
+		apiKey := os.Getenv(apiKeyEnv)
+
+		modelsStr := getEnv(prefix+name+"_MODELS", "")
+		var models []string
+		if modelsStr != "" {
+			for _, m := range strings.Split(modelsStr, ",") {
+				m = strings.TrimSpace(m)
+				if m != "" {
+					models = append(models, m)
+				}
+			}
+		}
+
+		c.AIProviders[name] = AIProviderConfig{
+			Name:    name,
+			BaseURL: strings.TrimRight(baseURL, "/"),
+			APIKey:  apiKey,
+			Models:  models,
+		}
+	}
+}
+
+// ─── Helper: collect config names ──────────────────────────────────────────
+//
+// Scans environment for variables matching prefix + * + any suffix,
+// extracts the name segment.
+
+func (c *Config) collectNames(prefix string, suffixes []string) []string {
+	set := make(map[string]bool)
+
+	for _, env := range os.Environ() {
+		if !strings.HasPrefix(env, prefix) {
+			continue
+		}
+		rest := strings.TrimPrefix(env, prefix)
+		for _, suffix := range suffixes {
+			if idx := strings.Index(rest, suffix); idx > 0 {
+				name := rest[:idx]
+				if name != "" {
+					set[name] = true
+				}
+			}
+		}
+	}
+
+	names := make([]string, 0, len(set))
+	for n := range set {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// ─── Summary ────────────────────────────────────────────────────────────────
+
+// Summary returns a human-readable summary of all configured connections.
+func (c *Config) Summary() string {
+	var b strings.Builder
+
+	b.WriteString(fmt.Sprintf("Zara Secure MCP v%s\n", c.ServerVersion))
+	b.WriteString(fmt.Sprintf("Transport: %s\n", c.Transport))
+
+	b.WriteString(fmt.Sprintf("\nSQL Databases (%d):\n", len(c.Databases)))
+	for _, db := range c.Databases {
+		b.WriteString(fmt.Sprintf("  ─ %s (%s)\n", db.Name, db.Driver))
+	}
+
+	b.WriteString(fmt.Sprintf("\nMongoDB (%d):\n", len(c.MongoDBs)))
+	for _, m := range c.MongoDBs {
+		b.WriteString(fmt.Sprintf("  ─ %s → %s/%s\n", m.Name, m.URI, m.Database))
+	}
+
+	b.WriteString(fmt.Sprintf("\nRedis (%d):\n", len(c.RedisDBs)))
+	for _, r := range c.RedisDBs {
+		b.WriteString(fmt.Sprintf("  ─ %s → %s\n", r.Name, r.Addr))
+	}
+
+	b.WriteString(fmt.Sprintf("\nHTTP APIs (%d):\n", len(c.APIs)))
+	for _, api := range c.APIs {
+		b.WriteString(fmt.Sprintf("  ─ %s → %s\n", api.Name, api.BaseURL))
+	}
+
+	b.WriteString(fmt.Sprintf("\nAI Providers (%d):\n", len(c.AIProviders)))
+	for _, ai := range c.AIProviders {
+		b.WriteString(fmt.Sprintf("  ─ %s (%d models)\n", ai.Name, len(ai.Models)))
+	}
+
+	return b.String()
+}
+
+// ─── Low-level helpers ──────────────────────────────────────────────────────
 
 func getEnv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {

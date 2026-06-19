@@ -2,6 +2,7 @@
 package engine
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 
@@ -169,43 +170,28 @@ func generateRecommendation(result *detector.ScanResult) string {
 		return "No sensitive data detected. Context is safe to send."
 	}
 
-	var parts []string
-
-	if len(result.SecretsFound) > 0 {
-		risks := make(map[string]int)
-		for _, f := range result.SecretsFound {
-			risks[string(f.Type)]++
-		}
-		for t, c := range risks {
-			parts = append(parts, "%d %s(s) found")
-			_ = t
-			_ = c
-		}
-		parts = append(parts, "%d secrets detected")
-	}
-
-	if len(result.PIIFound) > 0 {
-		parts = append(parts, "%d PII fields detected")
-	}
-
 	riskLabel := "PASS"
-	if result.RiskScore >= detector.RiskCrit {
+	switch {
+	case result.RiskScore >= detector.RiskCrit:
 		riskLabel = "CRITICAL"
-	} else if result.RiskScore >= detector.RiskHigh {
+	case result.RiskScore >= detector.RiskHigh:
 		riskLabel = "HIGH"
-	} else if result.RiskScore >= detector.RiskMid {
+	case result.RiskScore >= detector.RiskMid:
 		riskLabel = "MEDIUM"
-	} else if result.RiskScore >= detector.RiskLow {
+	case result.RiskScore >= detector.RiskLow:
 		riskLabel = "LOW"
 	}
 
-	var sb strings.Builder
-	sb.WriteString("Risk level: ")
-	sb.WriteString(riskLabel)
-	sb.WriteString(". ")
-	sb.WriteString(strings.Join(parts, ", "))
-	sb.WriteString(". Use redact_context before sending to LLM.")
-	return sb.String()
+	var parts []string
+	if len(result.SecretsFound) > 0 {
+		parts = append(parts, fmt.Sprintf("%d secret(s) detected", len(result.SecretsFound)))
+	}
+	if len(result.PIIFound) > 0 {
+		parts = append(parts, fmt.Sprintf("%d PII field(s) found", len(result.PIIFound)))
+	}
+
+	return fmt.Sprintf("Risk level: %s. %s Use redact_context before sending to LLM.",
+		riskLabel, strings.Join(parts, ", "))
 }
 
 // estimateTokens roughly estimates token count for a string.

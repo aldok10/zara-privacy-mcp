@@ -1,0 +1,231 @@
+{
+  "info": {
+    "name": "Zara Privacy MCP",
+    "description": "Test collection for Zara Privacy MCP — context security layer for OpenCode.\n\nServer: POST http://127.0.0.1:8530/mcp\n\nAll requests use JSON-RPC 2.0 protocol.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. initialize",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Response has server_name\", () => {",
+              "    const json = pm.response.json();",
+              "    pm.expect(json.result.server_name).to.eql('zara-privacy-mcp');",
+              "    pm.expect(json.result.protocol_version).to.eql('2025-03-26');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"jsonrpc\": \"2.0\",\n    \"id\": 1,\n    \"method\": \"initialize\"\n}"
+        },
+        "url": {
+          "raw": "http://127.0.0.1:8530/mcp",
+          "protocol": "http",
+          "host": ["127", "0", "0", "1"],
+          "port": "8530",
+          "path": ["mcp"]
+        }
+      }
+    },
+    {
+      "name": "2. list_tools",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", () => pm.response.to.have.status(200));",
+              "pm.test(\"Has 7 tools\", () => {",
+              "    const tools = pm.response.json().result.tools;",
+              "    pm.expect(tools.length).to.eql(7);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"jsonrpc\": \"2.0\",\n    \"id\": 2,\n    \"method\": \"list_tools\"\n}"
+        },
+        "url": {
+          "raw": "http://127.0.0.1:8530/mcp",
+          "protocol": "http",
+          "host": ["127", "0", "0", "1"],
+          "port": "8530",
+          "path": ["mcp"]
+        }
+      }
+    },
+    {
+      "name": "3. scan_context (secrets + PII)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"jsonrpc\": \"2.0\",\n    \"id\": 3,\n    \"method\": \"call_tool\",\n    \"params\": {\n        \"name\": \"scan_context\",\n        \"arguments\": {\n            \"text\": \"Hi team, my OpenAI key is sk-proj-ABCDefghijklmnopqrstuvwxyz123456 and my email is aldo@email.com. You can call me at 081234567890.\",\n            \"locales\": [\"id\", \"global\"]\n        }\n    }\n}"
+        },
+        "url": {
+          "raw": "http://127.0.0.1:8530/mcp",
+          "protocol": "http",
+          "host": ["127", "0", "0", "1"],
+          "port": "8530",
+          "path": ["mcp"]
+        }
+      }
+    },
+    {
+      "name": "4. redact_context",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"jsonrpc\": \"2.0\",\n    \"id\": 4,\n    \"method\": \"call_tool\",\n    \"params\": {\n        \"name\": \"redact_context\",\n        \"arguments\": {\n            \"text\": \"My API key is sk-proj-ABCDefghijklmnopqrstuvwxyz123456 and my KTP is 3172051234567890\",\n            \"locales\": [\"id\", \"global\"]\n        }\n    }\n}"
+        },
+        "url": {
+          "raw": "http://127.0.0.1:8530/mcp",
+          "protocol": "http",
+          "host": ["127", "0", "0", "1"],
+          "port": "8530",
+          "path": ["mcp"]
+        }
+      }
+    },
+    {
+      "name": "5. unredact_response",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"jsonrpc\": \"2.0\",\n    \"id\": 5,\n    \"method\": \"call_tool\",\n    \"params\": {\n        \"name\": \"unredact_response\",\n        \"arguments\": {\n            \"text\": \"Your API key [API_KEY_1] has been validated and your KTP [NIK_1] is on file.\"\n        }\n    }\n}"
+        },
+        "url": {
+          "raw": "http://127.0.0.1:8530/mcp",
+          "protocol": "http",
+          "host": ["127", "0", "0", "1"],
+          "port": "8530",
+          "path": ["mcp"]
+        }
+      }
+    },
+    {
+      "name": "6. compress_context",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"jsonrpc\": \"2.0\",\n    \"id\": 6,\n    \"method\": \"call_tool\",\n    \"params\": {\n        \"name\": \"compress_context\",\n        \"arguments\": {\n            \"text\": \"Line 1: Hello\\nLine 2: This is a test\\nLine 3: Hello\\nLine 4: This is a test\\nLine 5: API error occurred\\nLine 6: More details here\\nLine 7: // this is a comment\\nLine 8: # another comment\",\n            \"keywords\": [\"error\", \"API\"]\n        }\n    }\n}"
+        },
+        "url": {
+          "raw": "http://127.0.0.1:8530/mcp",
+          "protocol": "http",
+          "host": ["127", "0", "0", "1"],
+          "port": "8530",
+          "path": ["mcp"]
+        }
+      }
+    },
+    {
+      "name": "7. memory_filter (blocked)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"jsonrpc\": \"2.0\",\n    \"id\": 7,\n    \"method\": \"call_tool\",\n    \"params\": {\n        \"name\": \"memory_filter\",\n        \"arguments\": {\n            \"text\": \"User mentioned their API key: sk-proj-ABCDefghijklmnopqrstuvwxyz123456\"\n        }\n    }\n}"
+        },
+        "url": {
+          "raw": "http://127.0.0.1:8530/mcp",
+          "protocol": "http",
+          "host": ["127", "0", "0", "1"],
+          "port": "8530",
+          "path": ["mcp"]
+        }
+      }
+    },
+    {
+      "name": "8. classify_data",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"jsonrpc\": \"2.0\",\n    \"id\": 8,\n    \"method\": \"call_tool\",\n    \"params\": {\n        \"name\": \"classify_data\",\n        \"arguments\": {\n            \"text\": \"This is an internal discussion about our deployment strategy. The password for staging is temp123.\"\n        }\n    }\n}"
+        },
+        "url": {
+          "raw": "http://127.0.0.1:8530/mcp",
+          "protocol": "http",
+          "host": ["127", "0", "0", "1"],
+          "port": "8530",
+          "path": ["mcp"]
+        }
+      }
+    },
+    {
+      "name": "9. store_stats",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"jsonrpc\": \"2.0\",\n    \"id\": 9,\n    \"method\": \"call_tool\",\n    \"params\": {\n        \"name\": \"store_stats\",\n        \"arguments\": {}\n    }\n}"
+        },
+        "url": {
+          "raw": "http://127.0.0.1:8530/mcp",
+          "protocol": "http",
+          "host": ["127", "0", "0", "1"],
+          "port": "8530",
+          "path": ["mcp"]
+        }
+      }
+    },
+    {
+      "name": "10. Health Check",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "http://127.0.0.1:8530/health",
+          "protocol": "http",
+          "host": ["127", "0", "0", "1"],
+          "port": "8530",
+          "path": ["health"]
+        }
+      }
+    }
+  ]
+}

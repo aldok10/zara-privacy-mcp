@@ -1,6 +1,8 @@
-// Zara Privacy MCP — Context security layer for OpenCode.
+// Zara Secure MCP — General-purpose secure gateway for OpenCode.
 //
-// Zara Privacy MCP is a sidecar process that sits between OpenCode and LLM providers.
+// Zara Secure MCP is a sidecar process that provides privacy layer,
+// database proxy, HTTP API proxy, and AI provider proxy — all with
+// automatic data masking.
 // It automatically detects, redacts, and restores sensitive data (secrets, PII) so
 // that private information never leaves your machine unredacted.
 //
@@ -21,6 +23,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -34,12 +37,20 @@ import (
 	"github.com/aldok10/zara-privacy-mcp/internal/store"
 )
 
-func main() {
-	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
-	log.Println("[Zara Privacy MCP] Starting...")
+// stdioMode is set via --stdio flag for OpenCode sidecar spawning.
+var stdioMode = flag.Bool("stdio", false, "Run in stdio mode (for OpenCode MCP spawn)")
 
-	// Load configuration
+func main() {
+	flag.Parse()
+	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+
+	// Load configuration (flag overrides env)
 	cfg := config.Load()
+	if *stdioMode {
+		cfg.Transport = "stdio"
+	}
+
+	log.Printf("[Zara Privacy MCP] Starting... (transport=%s)", cfg.Transport)
 
 	// Validate encryption key
 	if cfg.EncryptionKey == "" {
@@ -80,50 +91,66 @@ func main() {
 		MaxTokens:      cfg.MaxTokens,
 	}
 
-	server := mcp.NewServer(mcpCfg, secretDetector, piiDetector, mappingStore)
+	server := mcp.NewServer(mcpCfg, cfg, secretDetector, piiDetector, mappingStore)
 
-	// Start metrics server if enabled
-	if cfg.MetricsEnable {
+	// Transport decision
+	switch cfg.Transport {
+	case "stdio":
+		// Stdio mode: OpenCode spawns us and communicates over stdin/stdout
+		// No startup banner (binary protocol), just serve
+		if err := server.StartStdio(); err != nil {
+			log.Fatalf("[FATAL] Stdio server error: %v", err)
+		}
+
+	case "http":
+		// HTTP mode: standalone server for development, Postman testing
 		go func() {
-			metricsAddr := fmt.Sprintf("%s:%s", cfg.Host, cfg.MetricsPort)
-			log.Printf("[INFO] Starting metrics server on %s", metricsAddr)
-			// Simple health endpoint on metrics port
-			// Phase 2: add proper Prometheus /metrics
+			sigCh := make(chan os.Signal, 1)
+			signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+			sig := <-sigCh
+			log.Printf("[INFO] Received signal %v, shutting down...", sig)
+			server.Stop()
+			os.Exit(0)
 		}()
-	}
 
-	// Handle graceful shutdown
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		sig := <-sigCh
-		log.Printf("[INFO] Received signal %v, shutting down...", sig)
-		server.Stop()
-		os.Exit(0)
-	}()
+		// Print startup banner
+		fmt.Println()
+		fmt.Println("╔══════════════════════════════════════════════╗")
+		fmt.Println("║          Zara Secure MCP v0.2.0             ║")
+		fmt.Println("║                                              ║")
+		fmt.Printf("║  Listening:  %s:%s                        ║\n", cfg.Host, cfg.Port)
+		fmt.Printf("║  Endpoint:   http://%s:%s/mcp               ║\n", cfg.Host, cfg.Port)
+		fmt.Println("║                                              ║")
+		fmt.Println("║  15 tools available via MCP protocol:       ║")
+		fmt.Println("║  ── Privacy ──                               ║")
+		fmt.Println("║    • scan_context      (detect secrets)      ║")
+		fmt.Println("║    • redact_context    (replace secrets)     ║")
+		fmt.Println("║    • unredact_response (restore secrets)     ║")
+		fmt.Println("║    • compress_context  (save tokens)         ║")
+		fmt.Println("║    • memory_filter     (protect memory)      ║")
+		fmt.Println("║    • classify_data     (sensitivity)         ║")
+		fmt.Println("║    • store_stats       (mapping stats)       ║")
+		fmt.Println("║  ── Database ──                               ║")
+		fmt.Println("║    • db_query          (SQL + auto-mask)     ║")
+		fmt.Println("║    • db_list_tables    (schema discovery)    ║")
+		fmt.Println("║    • db_describe       (column details)      ║")
+		fmt.Println("║  ── HTTP API ──                               ║")
+		fmt.Println("║    • http_request      (curl + auto-mask)    ║")
+		fmt.Println("║    • http_list_apis    (list endpoints)      ║")
+		fmt.Println("║  ── AI Provider ──                            ║")
+		fmt.Println("║    • ai_chat           (LLM + auto-redact)   ║")
+		fmt.Println("║    • ai_list_providers (list providers)      ║")
+		fmt.Println("║  ── Config ──                                 ║")
+		fmt.Println("║    • config_list       (show connections)    ║")
+		fmt.Println("╚══════════════════════════════════════════════╝")
+		fmt.Println()
 
-	// Print startup banner
-	fmt.Println()
-	fmt.Println("╔══════════════════════════════════════════╗")
-	fmt.Println("║        Zara Privacy MCP v0.1.0           ║")
-	fmt.Println("║                                          ║")
-	fmt.Printf("║  Listening:  %s:%s                    ║\n", cfg.Host, cfg.Port)
-	fmt.Printf("║  Endpoint:   /mcp                         ║")
-	fmt.Println()
-	fmt.Println("║  Tools:                                  ║")
-	fmt.Println("║    • scan_context      (detect secrets)  ║")
-	fmt.Println("║    • redact_context    (replace secrets) ║")
-	fmt.Println("║    • unredact_response (restore secrets) ║")
-	fmt.Println("║    • compress_context  (save tokens)     ║")
-	fmt.Println("║    • memory_filter     (protect memory)  ║")
-	fmt.Println("║    • classify_data     (sensitivity)     ║")
-	fmt.Println("║    • store_stats       (mapping stats)   ║")
-	fmt.Println("╚══════════════════════════════════════════╝")
-	fmt.Println()
+		if err := server.Start(); err != nil {
+			log.Fatalf("[FATAL] HTTP server error: %v", err)
+		}
 
-	// Start MCP server
-	if err := server.Start(); err != nil {
-		log.Fatalf("[FATAL] Server error: %v", err)
+	default:
+		log.Fatalf("[FATAL] Unknown transport: %s (use 'http' or 'stdio')", cfg.Transport)
 	}
 }
 
