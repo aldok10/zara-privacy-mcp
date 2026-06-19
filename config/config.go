@@ -14,22 +14,22 @@ import (
 // Config holds all configuration for the MCP server.
 type Config struct {
 	// Transport: "http" or "stdio"
-	Transport      string
+	Transport string
 
 	// Server
-	Port           string
-	Host           string
-	LogLevel       string
+	Port     string
+	Host     string
+	LogLevel string
 
 	// MCP
-	ServerName     string
-	ServerVersion  string
+	ServerName    string
+	ServerVersion string
 
 	// Encryption
-	EncryptionKey  string
+	EncryptionKey string
 
 	// Storage (mapping store)
-	DBPath         string
+	DBPath string
 
 	// Scanning
 	DefaultLocales []string
@@ -40,25 +40,25 @@ type Config struct {
 	CompressEnable bool
 
 	// Metrics
-	MetricsEnable  bool
-	MetricsPort    string
+	MetricsEnable bool
+	MetricsPort   string
 
 	// OpenObserve
-	ObserveEnable  bool
-	ObserveURL     string
-	ObserveUser    string
-	ObserveKey     string
-	ObserveStream  string
+	ObserveEnable bool
+	ObserveURL    string
+	ObserveUser   string
+	ObserveKey    string
+	ObserveStream string
 
 	// Hot-reload
-	ReloadSignal   bool // enable SIGHUP reload
+	ReloadSignal bool // enable SIGHUP reload
 
 	// External connections (parsed from env)
-	Databases     map[string]DBConfig
-	MongoDBs      map[string]MongoDBConfig
-	RedisDBs      map[string]RedisDBConfig
-	APIs          map[string]APIConfig
-	AIProviders   map[string]AIProviderConfig
+	Databases   map[string]DBConfig
+	MongoDBs    map[string]MongoDBConfig
+	RedisDBs    map[string]RedisDBConfig
+	APIs        map[string]APIConfig
+	AIProviders map[string]AIProviderConfig
 }
 
 // ─── Database Config ────────────────────────────────────────────────────────
@@ -108,10 +108,10 @@ type APIConfig struct {
 
 // AIProviderConfig represents an AI/LLM provider.
 type AIProviderConfig struct {
-	Name     string
-	BaseURL  string
-	APIKey   string // resolved from env var
-	Models   []string
+	Name    string
+	BaseURL string
+	APIKey  string // resolved from env var
+	Models  []string
 }
 
 // ─── Load ───────────────────────────────────────────────────────────────────
@@ -119,16 +119,16 @@ type AIProviderConfig struct {
 // Load reads configuration from environment variables with sensible defaults.
 func Load() *Config {
 	c := &Config{
-		Transport:      getEnv("ZARA_MCP_TRANSPORT", "http"),
-		Port:           getEnv("ZARA_MCP_PORT", "8530"),
-		Host:           getEnv("ZARA_MCP_HOST", "127.0.0.1"),
-		LogLevel:       getEnv("ZARA_LOG_LEVEL", "info"),
+		Transport: getEnv("ZARA_MCP_TRANSPORT", "http"),
+		Port:      getEnv("ZARA_MCP_PORT", "8530"),
+		Host:      getEnv("ZARA_MCP_HOST", "127.0.0.1"),
+		LogLevel:  getEnv("ZARA_LOG_LEVEL", "info"),
 
-		ServerName:     getEnv("ZARA_MCP_NAME", "zara-secure-mcp"),
-		ServerVersion:  getEnv("ZARA_MCP_VERSION", "0.2.0"),
+		ServerName:    getEnv("ZARA_MCP_NAME", "zara-privacy-mcp"),
+		ServerVersion: getEnv("ZARA_MCP_VERSION", "0.2.0"),
 
-		EncryptionKey:  getEnv("ZARA_ENCRYPTION_KEY", ""),
-		DBPath:         getEnv("ZARA_DB_PATH", "~/.zara/privacymcp/mappings.db"),
+		EncryptionKey: getEnv("ZARA_ENCRYPTION_KEY", ""),
+		DBPath:        getEnv("ZARA_DB_PATH", "~/.zara/privacymcp/mappings.db"),
 
 		DefaultLocales: []string{"id", "sg", "global"},
 		MaxContextSize: getEnvInt("ZARA_MAX_CONTEXT_BYTES", 1024*1024),
@@ -136,22 +136,22 @@ func Load() *Config {
 		MaxTokens:      getEnvInt("ZARA_MAX_TOKENS", 4096),
 		CompressEnable: getEnvBool("ZARA_COMPRESS_ENABLED", true),
 
-		MetricsEnable:  getEnvBool("ZARA_METRICS_ENABLED", true),
-		MetricsPort:    getEnv("ZARA_METRICS_PORT", "8531"),
+		MetricsEnable: getEnvBool("ZARA_METRICS_ENABLED", true),
+		MetricsPort:   getEnv("ZARA_METRICS_PORT", "8531"),
 
-		ObserveEnable:  getEnvBool("ZARA_OBSERVE_ENABLED", false),
-		ObserveURL:     getEnv("ZARA_OBSERVE_URL", ""),
-		ObserveUser:    getEnv("ZARA_OBSERVE_USER", ""),
-		ObserveKey:     getEnv("ZARA_OBSERVE_KEY", ""),
-		ObserveStream:  getEnv("ZARA_OBSERVE_STREAM", "zara-mcp"),
+		ObserveEnable: getEnvBool("ZARA_OBSERVE_ENABLED", false),
+		ObserveURL:    getEnv("ZARA_OBSERVE_URL", ""),
+		ObserveUser:   getEnv("ZARA_OBSERVE_USER", ""),
+		ObserveKey:    getEnv("ZARA_OBSERVE_KEY", ""),
+		ObserveStream: getEnv("ZARA_OBSERVE_STREAM", "zara-mcp"),
 
-		ReloadSignal:   getEnvBool("ZARA_RELOAD_ENABLED", true),
+		ReloadSignal: getEnvBool("ZARA_RELOAD_ENABLED", true),
 
-		Databases:     make(map[string]DBConfig),
-		MongoDBs:      make(map[string]MongoDBConfig),
-		RedisDBs:      make(map[string]RedisDBConfig),
-		APIs:          make(map[string]APIConfig),
-		AIProviders:   make(map[string]AIProviderConfig),
+		Databases:   make(map[string]DBConfig),
+		MongoDBs:    make(map[string]MongoDBConfig),
+		RedisDBs:    make(map[string]RedisDBConfig),
+		APIs:        make(map[string]APIConfig),
+		AIProviders: make(map[string]AIProviderConfig),
 	}
 
 	c.parseDatabases()

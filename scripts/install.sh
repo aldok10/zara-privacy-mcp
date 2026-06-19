@@ -14,7 +14,7 @@ set -euo pipefail
 #   3. Creates the DB directory ~/.zara/privacymcp/
 #   4. Offers to add MCP config to opencode.json
 
-BINARY="zara-secure-mcp"
+BINARY="zara-privacy-mcp"
 INSTALL_DIR="/usr/local/bin"
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 OPCODE_CONFIG="${PROJECT_DIR}/../../zara-agent-opc/opencode.json"

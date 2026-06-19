@@ -1,6 +1,6 @@
 .PHONY: build run test clean install uninstall lint
 
-BINARY   = zara-secure-mcp
+BINARY   = zara-privacy-mcp
 BINDIR   = /usr/local/bin
 GO       = go
 GOFLAGS  = -ldflags="-s -w"
@@ -73,8 +73,8 @@ uninstall:
 
 # ─── Skill Install / Uninstall ──────────────────────────────────────────────
 
-SKILL_SRC   = .opencode/skills/zara-secure-mcp
-SKILL_NAME  = zara-secure-mcp
+SKILL_SRC   = .opencode/skills/zara-privacy-mcp
+SKILL_NAME  = zara-privacy-mcp
 AGENTS_DIR  = $(HOME)/.agents/skills
 CLAUDE_DIR  = $(HOME)/.claude/skills
 

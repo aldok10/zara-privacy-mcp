@@ -107,7 +107,7 @@ Zara Secure MCP
 
 ```bash
 make build
-# Produces ./zara-secure-mcp binary
+# Produces ./zara-privacy-mcp binary
 ```
 
 ### 2. Configure connections (optional)
@@ -147,14 +147,14 @@ make run-dev
 
 ```bash
 make build
-./zara-secure-mcp --stdio
+./zara-privacy-mcp --stdio
 ```
 
 ### 5. Install
 
 ```bash
 make install
-# Binary installed to /usr/local/bin/zara-secure-mcp
+# Binary installed to /usr/local/bin/zara-privacy-mcp
 ```
 
 ### 6. Test
@@ -269,9 +269,9 @@ Zara Privacy MCP runs as a **sidecar process** managed by OpenCode. Once configu
 ### 1. Build and install
 
 ```bash
-cd zara-secure-mcp
+cd zara-privacy-mcp
 make install
-# Installed to /usr/local/bin/zara-secure-mcp
+# Installed to /usr/local/bin/zara-privacy-mcp
 ```
 
 ### 2. Set environment variables
@@ -304,9 +304,9 @@ The MCP server is already configured in both the project and global `opencode.js
 ```json
 {
   "mcp": {
-    "zara-secure-mcp": {
+    "zara-privacy-mcp": {
       "type": "local",
-      "command": ["zara-secure-mcp", "--stdio"],
+      "command": ["zara-privacy-mcp", "--stdio"],
       "enabled": true,
       "environment": {
         "ZARA_ENCRYPTION_KEY": "{env:ZARA_ENCRYPTION_KEY}",
@@ -321,7 +321,7 @@ The MCP server is already configured in both the project and global `opencode.js
 
 ### 4. Restart OpenCode
 
-Close and reopen OpenCode, or reload config. OpenCode spawns `zara-secure-mcp --stdio` on startup. All 15 tools are available to agents automatically.
+Close and reopen OpenCode, or reload config. OpenCode spawns `zara-privacy-mcp --stdio` on startup. All 15 tools are available to agents automatically.
 
 ---
 

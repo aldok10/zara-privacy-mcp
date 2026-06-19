@@ -13,7 +13,7 @@
 
 set -euo pipefail
 
-SKILL_NAME="zara-secure-mcp"
+SKILL_NAME="zara-privacy-mcp"
 SKILL_SRC=".opencode/skills/${SKILL_NAME}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
