@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -260,10 +261,8 @@ func validateURL(rawURL string) error {
 
 	// Block known internal hostnames
 	blockedHosts := []string{"localhost", "metadata.google.internal", "kubernetes.default.svc", "instance-data.ec2.internal"}
-	for _, bh := range blockedHosts {
-		if host == bh {
-			return fmt.Errorf("blocked: internal hostname")
-		}
+	if slices.Contains(blockedHosts, host) {
+		return fmt.Errorf("blocked: internal hostname")
 	}
 	// Block any *.internal suffix
 	if strings.HasSuffix(host, ".internal") {
@@ -272,10 +271,8 @@ func validateURL(rawURL string) error {
 
 	// Block cloud metadata endpoints (AWS, GCP, Alibaba, ECS)
 	blockedIPs := []string{"169.254.169.254", "100.100.100.200", "169.254.170.2", "fd00:ec2::254"}
-	for _, bip := range blockedIPs {
-		if host == bip {
-			return fmt.Errorf("blocked: cloud metadata endpoint")
-		}
+	if slices.Contains(blockedIPs, host) {
+		return fmt.Errorf("blocked: cloud metadata endpoint")
 	}
 
 	// Block private/internal IPs

@@ -2,7 +2,8 @@ package ai
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -36,6 +37,7 @@ type Router struct {
 	quota    *Quota
 	pools    map[string]*Pool // multi-account pools per provider
 	usage    map[string]*usageEntry
+	logger   *slog.Logger
 	mu       sync.RWMutex
 }
 
@@ -58,6 +60,7 @@ func NewRouter(reg *Registry, eng *engine.RedactEngine, cfg RouterConfig) *Route
 		quota:    NewQuota(),
 		pools:    make(map[string]*Pool),
 		usage:    make(map[string]*usageEntry),
+		logger:   slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})),
 	}
 }
 
@@ -89,7 +92,7 @@ func (rt *Router) ChatWithFallback(providerName string, req ChatRequest) (*ChatR
 	var lastErr error
 	for _, name := range chain {
 		if !rt.quota.Available(name) {
-			log.Printf("[AI-ROUTER] %s: quota exhausted, skipping", name)
+			rt.logger.Warn("quota exhausted, skipping", "provider", name)
 			continue
 		}
 
@@ -115,7 +118,7 @@ func (rt *Router) ChatWithFallback(providerName string, req ChatRequest) (*ChatR
 			}
 			lastErr = err
 			rt.trackError(name)
-			log.Printf("[AI-ROUTER] %s attempt %d failed", name, attempt+1)
+			rt.logger.Warn("provider attempt failed", "provider", name, "attempt", attempt+1)
 		}
 	}
 

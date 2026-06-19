@@ -2,7 +2,6 @@
 package main
 
 import (
-	"log"
 	"log/slog"
 	"os"
 
@@ -26,7 +25,7 @@ func main() {
 		fx.Invoke(bootstrap.Invoke),
 	)
 	if err != nil {
-		log.Fatal(err)
+		stderrLogger.Error("failed to create app", "error", err)
 	}
 
 	app.Run()

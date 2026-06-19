@@ -2,7 +2,8 @@ package transport
 
 import (
 	"context"
-	"log"
+	"log/slog"
+	"os"
 	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -21,8 +22,10 @@ type MCPServer struct {
 // Server returns the underlying mcp-go server.
 func (m *MCPServer) Server() *server.MCPServer { return m.s }
 
-// NewMCPServer creates the MCP server with all 19 tools registered.
+// NewMCPServer creates the MCP server with all 21 tools registered.
 func NewMCPServer(handlers *tools.Handlers, obs *observe.Client) *MCPServer {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
 	s := server.NewMCPServer(
 		"zara-privacy-mcp",
 		version.Version,
@@ -31,13 +34,13 @@ func NewMCPServer(handlers *tools.Handlers, obs *observe.Client) *MCPServer {
 		server.WithHooks(&server.Hooks{
 			OnAfterCallTool: []server.OnAfterCallToolFunc{
 				func(ctx context.Context, id any, req *mcp.CallToolRequest, res any) {
-					log.Printf("[TOOL] %s completed", req.Params.Name)
+					logger.Info("tool completed", "tool", req.Params.Name)
 				},
 			},
 		}),
 		server.WithToolHandlerMiddleware(rateLimitMiddleware(20)),
 		server.WithToolHandlerMiddleware(observeMiddleware(obs)),
-		server.WithToolHandlerMiddleware(auditMiddleware),
+		server.WithToolHandlerMiddleware(newAuditMiddleware(logger)),
 	)
 
 	registerPrivacyTools(s, handlers)
@@ -262,13 +265,15 @@ func registerConfigTools(s *server.MCPServer, h *tools.Handlers) {
 
 // ─── Middleware ──────────────────────────────────────────────────────────────
 
-// auditMiddleware logs tool execution duration.
-func auditMiddleware(next server.ToolHandlerFunc) server.ToolHandlerFunc {
-	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		start := time.Now()
-		result, err := next(ctx, req)
-		log.Printf("[AUDIT] tool=%s duration=%s", req.Params.Name, time.Since(start).Round(time.Millisecond))
-		return result, err
+// newAuditMiddleware logs tool execution duration using structured slog.
+func newAuditMiddleware(logger *slog.Logger) server.ToolHandlerMiddleware {
+	return func(next server.ToolHandlerFunc) server.ToolHandlerFunc {
+		return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			start := time.Now()
+			result, err := next(ctx, req)
+			logger.Info("tool call", "tool", req.Params.Name, "duration", time.Since(start).Round(time.Millisecond).String())
+			return result, err
+		}
 	}
 }
 

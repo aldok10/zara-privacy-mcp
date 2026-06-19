@@ -34,7 +34,7 @@ func Invoke(p Params) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	// Hot-reload config on SIGHUP
-	config.WatchReload(func(newCfg *config.Config) {
+	config.WatchReload(logger, func(newCfg *config.Config) {
 		logger.Info("config reloaded")
 	})
 

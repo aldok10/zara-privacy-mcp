@@ -5,8 +5,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"maps"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -197,7 +198,7 @@ func (s *MappingStore) RestoreFromSnapshot(encrypted string) error {
 func (s *MappingStore) persistMapping(m detector.Mapping) {
 	encrypted, err := s.enc.EncryptString(m.Original)
 	if err != nil {
-		log.Printf("[WARN] persistMapping encrypt: %v", err)
+		slog.New(slog.NewTextHandler(os.Stderr, nil)).Warn("persistMapping encrypt failed")
 		return
 	}
 
@@ -205,7 +206,7 @@ func (s *MappingStore) persistMapping(m detector.Mapping) {
 		"INSERT OR REPLACE INTO mappings (placeholder, original_encrypted, type, accessed_at) VALUES (?, ?, ?, ?)",
 		m.Placeholder, encrypted, m.Type, time.Now().UTC(),
 	); err != nil {
-		log.Printf("[WARN] persistMapping write: %v", err)
+		slog.New(slog.NewTextHandler(os.Stderr, nil)).Warn("persistMapping write failed")
 	}
 }
 

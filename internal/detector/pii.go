@@ -167,10 +167,7 @@ func (d *PIIDetector) ScanWithContext(text string, locales ...string) []Finding 
 func isFalsePositive(f Finding, text string) bool {
 	// Get context around the finding
 	start := max(f.Position-20, 0)
-	end := f.Position + f.Length + 20
-	if end > len(text) {
-		end = len(text)
-	}
+	end := min(f.Position+f.Length+20, len(text))
 	ctx := strings.ToLower(text[start:end])
 
 	// Check if it looks like a year (4 digits, 1900-2099)
