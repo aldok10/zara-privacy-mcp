@@ -182,7 +182,7 @@ func (r *Registry) Do(apiName string, req Request) (*Response, error) {
 	}
 	defer httpResp.Body.Close()
 
-	bodyBytes, err := io.ReadAll(io.LimitReader(httpResp.Body, 50*1024*1024)) // 50MB max
+	bodyBytes, err := io.ReadAll(io.LimitReader(httpResp.Body, 5*1024*1024)) // 5MB max
 	if err != nil {
 		return nil, fmt.Errorf("read response failed")
 	}

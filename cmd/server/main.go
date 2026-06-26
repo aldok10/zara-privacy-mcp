@@ -26,6 +26,7 @@ func main() {
 	)
 	if err != nil {
 		stderrLogger.Error("failed to create app", "error", err)
+		os.Exit(1)
 	}
 
 	app.Run()

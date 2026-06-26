@@ -22,7 +22,8 @@ type MappingStore struct {
 	db       *sql.DB
 	enc      *crypto.Encryptor
 	mu       sync.RWMutex
-	inMemory map[string]detector.Mapping
+	inMemory map[string]detector.Mapping // placeholder -> mapping
+	byOriginal map[string]string           // original -> placeholder (reverse index)
 	counter  map[string]int
 }
 
@@ -40,10 +41,11 @@ func NewMappingStore(dbPath string, encKey []byte) (*MappingStore, error) {
 	}
 
 	s := &MappingStore{
-		db:       db,
-		enc:      crypto.NewEncryptor(encKey),
-		inMemory: make(map[string]detector.Mapping),
-		counter:  make(map[string]int),
+		db:         db,
+		enc:        crypto.NewEncryptor(encKey),
+		inMemory:   make(map[string]detector.Mapping),
+		byOriginal: make(map[string]string),
+		counter:    make(map[string]int),
 	}
 
 	if err := s.migrate(); err != nil {
@@ -94,19 +96,18 @@ func (s *MappingStore) loadFromDB() {
 			Original:    original,
 			Type:        mtype,
 		}
+		s.byOriginal[original] = placeholder
 	}
 }
 
 // GetOrCreate returns an existing placeholder for a value, or creates a new one.
 func (s *MappingStore) GetOrCreate(original string, mtype string) detector.Mapping {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	// Check if already mapped
-	for _, m := range s.inMemory {
-		if m.Original == original {
-			s.mu.Unlock()
-			return m
-		}
+	// O(1) lookup via reverse index
+	if ph, ok := s.byOriginal[original]; ok {
+		return s.inMemory[ph]
 	}
 
 	// Create new mapping
@@ -120,9 +121,9 @@ func (s *MappingStore) GetOrCreate(original string, mtype string) detector.Mappi
 		Type:        mtype,
 	}
 	s.inMemory[placeholder] = mapping
-	s.mu.Unlock()
+	s.byOriginal[original] = placeholder
 
-	// Persist outside lock — SQLite handles its own concurrency
+	// Persist inside lock to prevent race conditions
 	s.persistMapping(mapping)
 
 	return mapping

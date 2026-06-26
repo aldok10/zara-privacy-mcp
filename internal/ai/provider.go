@@ -144,7 +144,7 @@ func (r *Registry) Chat(providerName string, req ChatRequest, redactEngine *engi
 	}
 	defer httpResp.Body.Close()
 
-	respBody, err := io.ReadAll(httpResp.Body)
+	respBody, err := io.ReadAll(io.LimitReader(httpResp.Body, 10*1024*1024)) // 10MB max
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
