@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"log/slog"
 	"os"
 
 	"go.uber.org/fx"
@@ -48,10 +49,17 @@ type detectors struct {
 }
 
 func provideDetectors() detectors {
-	return detectors{
-		Secret: detector.NewSecretDetector(),
-		PII:    detector.NewPIIDetector(),
+	secret := detector.NewSecretDetector()
+	pii := detector.NewPIIDetector()
+
+	// Load custom detection rules if configured
+	if path := os.Getenv("ZARA_CUSTOM_PATTERNS"); path != "" {
+		if err := secret.LoadCustomRules(path); err != nil {
+			slog.New(slog.NewTextHandler(os.Stderr, nil)).Warn("failed to load custom patterns", "path", path, "error", err)
+		}
 	}
+
+	return detectors{Secret: secret, PII: pii}
 }
 
 func provideStore(cfg *config.Config) (*store.MappingStore, error) {

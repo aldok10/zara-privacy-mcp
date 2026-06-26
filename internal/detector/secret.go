@@ -1,7 +1,9 @@
 package detector
 
 import (
+	"encoding/json"
 	"math"
+	"os"
 	"regexp"
 	"strings"
 )
@@ -98,6 +100,53 @@ func (d *SecretDetector) compile() {
 	for i, p := range d.patterns {
 		d.compiled[i] = regexp.MustCompile(p.Regex)
 	}
+}
+
+// CustomRule defines a user-configurable detection rule (JSON format).
+type CustomRule struct {
+	Name     string `json:"name"`
+	Pattern  string `json:"pattern"`
+	Severity string `json:"severity"` // "low", "mid", "high", "critical"
+	Category string `json:"category"`
+}
+
+// LoadCustomRules loads additional detection patterns from a JSON file.
+// File format: [{"name": "...", "pattern": "...", "severity": "high", "category": "..."}]
+func (d *SecretDetector) LoadCustomRules(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+
+	var rules []CustomRule
+	if err := json.Unmarshal(data, &rules); err != nil {
+		return err
+	}
+
+	for _, r := range rules {
+		// Validate regex compiles
+		if _, err := regexp.Compile(r.Pattern); err != nil {
+			continue
+		}
+		risk := RiskMid
+		switch strings.ToLower(r.Severity) {
+		case "low":
+			risk = RiskLow
+		case "mid", "medium":
+			risk = RiskMid
+		case "high":
+			risk = RiskHigh
+		case "critical", "crit":
+			risk = RiskCrit
+		}
+		d.patterns = append(d.patterns, SecretPattern{
+			Name: r.Name, Regex: r.Pattern, Risk: risk, Category: r.Category,
+		})
+	}
+
+	// Recompile with new patterns
+	d.compile()
+	return nil
 }
 
 // Scan runs all secret detectors against the input text.
