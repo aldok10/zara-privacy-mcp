@@ -53,6 +53,11 @@ type Config struct {
 	// Hot-reload
 	ReloadSignal bool // enable SIGHUP reload
 
+	// Timeouts (seconds, 0 = use defaults)
+	TimeoutDB   int // default 30s
+	TimeoutAI   int // default 120s
+	TimeoutHTTP int // default 30s
+
 	// External connections (parsed from env)
 	Databases   map[string]DBConfig
 	MongoDBs    map[string]MongoDBConfig
@@ -148,6 +153,10 @@ func Load() *Config {
 		ObserveStream: getEnv("ZARA_OBSERVE_STREAM", "zara-mcp"),
 
 		ReloadSignal: getEnvBool("ZARA_RELOAD_ENABLED", true),
+
+		TimeoutDB:   getEnvInt("ZARA_TIMEOUT_DB", 30),
+		TimeoutAI:   getEnvInt("ZARA_TIMEOUT_AI", 120),
+		TimeoutHTTP: getEnvInt("ZARA_TIMEOUT_HTTP", 30),
 
 		Databases:   make(map[string]DBConfig),
 		MongoDBs:    make(map[string]MongoDBConfig),
