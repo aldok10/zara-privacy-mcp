@@ -321,10 +321,10 @@ func (d *DB) driverDialect() string {
 // ─── Query Execution ────────────────────────────────────────────────────────
 
 // Query runs a SELECT query and returns masked results.
-func (d *DB) Query(query string, args ...any) (*QueryResult, error) {
+func (d *DB) Query(ctx context.Context, query string, args ...any) (*QueryResult, error) {
 	start := time.Now()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	rows, err := d.db.QueryContext(ctx, query, args...)
@@ -387,10 +387,10 @@ func (d *DB) Query(query string, args ...any) (*QueryResult, error) {
 }
 
 // Exec runs a non-SELECT query (INSERT, UPDATE, DELETE).
-func (d *DB) Exec(query string, args ...any) (*QueryResult, error) {
+func (d *DB) Exec(ctx context.Context, query string, args ...any) (*QueryResult, error) {
 	start := time.Now()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	result, err := d.db.ExecContext(ctx, query, args...)

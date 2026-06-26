@@ -88,9 +88,10 @@ type RedisDBConfig struct {
 	Username        string
 	Password        string
 	DB              int
-	PoolSize        int // max pool connections (0 = default 10)
-	MinIdleConns    int // min idle connections (0 = default 2)
-	ConnMaxIdleTime int // seconds (0 = default 300s/5m)
+	TLS             bool // enable TLS connection
+	PoolSize        int  // max pool connections (0 = default 10)
+	MinIdleConns    int  // min idle connections (0 = default 2)
+	ConnMaxIdleTime int  // seconds (0 = default 300s/5m)
 }
 
 // ─── HTTP API Config ────────────────────────────────────────────────────────
@@ -233,13 +234,14 @@ func (c *Config) parseMongoDBs() {
 //   ZARA_REDIS_<NAME>_USERNAME=optional
 //   ZARA_REDIS_<NAME>_PASSWORD=optional
 //   ZARA_REDIS_<NAME>_DB=0 (optional, default 0)
+//   ZARA_REDIS_<NAME>_TLS=true (optional, default false)
 //   ZARA_REDIS_<NAME>_POOL_SIZE=10 (optional, default 10)
 //   ZARA_REDIS_<NAME>_MIN_IDLE_CONNS=2 (optional, default 2)
 //   ZARA_REDIS_<NAME>_CONN_MAX_IDLE_TIME=300 (optional, seconds, default 5m)
 
 func (c *Config) parseRedisDBs() {
 	prefix := "ZARA_REDIS_"
-	suffixes := []string{"_ADDR", "_USERNAME", "_PASSWORD", "_DB", "_POOL_SIZE", "_MIN_IDLE_CONNS", "_CONN_MAX_IDLE_TIME"}
+	suffixes := []string{"_ADDR", "_USERNAME", "_PASSWORD", "_DB", "_TLS", "_POOL_SIZE", "_MIN_IDLE_CONNS", "_CONN_MAX_IDLE_TIME"}
 
 	names := c.collectNames(prefix, suffixes)
 	for _, name := range names {
@@ -254,6 +256,7 @@ func (c *Config) parseRedisDBs() {
 			Username:        getEnv(prefix+name+"_USERNAME", ""),
 			Password:        getEnv(prefix+name+"_PASSWORD", ""),
 			DB:              getEnvInt(prefix+name+"_DB", 0),
+			TLS:             getEnv(prefix+name+"_TLS", "") == "true",
 			PoolSize:        getEnvInt(prefix+name+"_POOL_SIZE", 0),
 			MinIdleConns:    getEnvInt(prefix+name+"_MIN_IDLE_CONNS", 0),
 			ConnMaxIdleTime: getEnvInt(prefix+name+"_CONN_MAX_IDLE_TIME", 0),

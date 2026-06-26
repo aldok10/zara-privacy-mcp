@@ -89,7 +89,7 @@ func (r *Registry) List() []string {
 }
 
 // Do sends an HTTP request through the proxy with automatic auth and masking.
-func (r *Registry) Do(apiName string, req Request) (*Response, error) {
+func (r *Registry) Do(ctx context.Context, apiName string, req Request) (*Response, error) {
 	cfg, ok := r.apis[apiName]
 	if !ok {
 		return nil, fmt.Errorf("unknown API: %s (configure via ZARA_API_%s_URL)", apiName, strings.ToUpper(apiName))
@@ -106,18 +106,23 @@ func (r *Registry) Do(apiName string, req Request) (*Response, error) {
 		return nil, err
 	}
 
-	// Build body
+	// Build body (scan for secrets before sending)
 	var bodyReader io.Reader
+	var bodyWarnings []detector.Finding
 	if len(req.Body) > 0 {
+		_, bodyWarnings = r.masker.MaskString(string(req.Body))
+		if len(bodyWarnings) > 0 {
+			return nil, fmt.Errorf("request body contains %d secret(s)/PII - refusing to send to external API", len(bodyWarnings))
+		}
 		bodyReader = bytes.NewReader(req.Body)
 	}
 
-	// Apply per-request timeout via context (thread-safe)
+	// Apply per-request timeout via context
 	timeout := 30
 	if req.Timeout > 0 {
 		timeout = req.Timeout
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()
 
 	// Create request
