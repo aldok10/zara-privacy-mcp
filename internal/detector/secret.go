@@ -37,6 +37,27 @@ func (d *SecretDetector) registerBuiltin() {
 		// DeepSeek
 		{Name: "DeepSeek API Key", Regex: `sk-[a-f0-9]{32,64}`, Risk: RiskCrit, Category: "API Key"},
 
+		// Groq
+		{Name: "Groq API Key", Regex: `gsk_[A-Za-z0-9]{20,60}`, Risk: RiskCrit, Category: "API Key"},
+
+		// Mistral
+		{Name: "Mistral API Key", Regex: `\bmistral[_-][A-Za-z0-9]{32,64}\b`, Risk: RiskCrit, Category: "API Key"},
+
+		// Cohere
+		{Name: "Cohere API Key", Regex: `\bco-[A-Za-z0-9]{40,60}\b`, Risk: RiskCrit, Category: "API Key"},
+
+		// Fireworks AI
+		{Name: "Fireworks API Key", Regex: `fw_[A-Za-z0-9]{20,60}`, Risk: RiskCrit, Category: "API Key"},
+
+		// Together AI
+		{Name: "Together API Key", Regex: `tog-[A-Za-z0-9]{40,80}`, Risk: RiskCrit, Category: "API Key"},
+
+		// Perplexity
+		{Name: "Perplexity API Key", Regex: `pplx-[A-Za-z0-9]{40,80}`, Risk: RiskCrit, Category: "API Key"},
+
+		// OpenRouter
+		{Name: "OpenRouter API Key", Regex: `sk-or-v1-[A-Za-z0-9]{40,80}`, Risk: RiskCrit, Category: "API Key"},
+
 		// AWS
 		{Name: "AWS Access Key", Regex: `AKIA[0-9A-Z]{16}`, Risk: RiskCrit, Category: "AWS"},
 		{Name: "AWS Secret Key", Regex: `(?i)aws(.{0,20})?(?:key|secret)?['"?\s]?[:=]['"?\s]?([A-Za-z0-9\/+=]{40,60})`, Risk: RiskCrit, Category: "AWS"},

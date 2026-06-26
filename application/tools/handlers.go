@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 
@@ -40,6 +41,22 @@ type Handlers struct {
 }
 
 const maxTextSize = 1024 * 1024 // 1MB
+
+// Error code prefixes for structured MCP error responses.
+const (
+	errBlocked  = "[BLOCKED] "
+	errNotFound = "[NOT_FOUND] "
+	errTimeout  = "[TIMEOUT] "
+	errExec     = "[EXEC_ERROR] "
+)
+
+// ctxWithTimeout returns a context with the given timeout (seconds). 0 means no timeout added.
+func ctxWithTimeout(ctx context.Context, seconds int) (context.Context, context.CancelFunc) {
+	if seconds > 0 {
+		return context.WithTimeout(ctx, time.Duration(seconds)*time.Second)
+	}
+	return ctx, func() {}
+}
 
 // ─── Privacy Tools ──────────────────────────────────────────────────────────
 
@@ -161,12 +178,12 @@ func (h *Handlers) DBQuery(ctx context.Context, req mcp.CallToolRequest) (*mcp.C
 	// Security gate
 	if err := validateSQL(query); err != nil {
 		h.AuditLog.LogBlocked("db_query", err.Error())
-		return mcp.NewToolResultError("blocked: " + err.Error()), nil
+		return mcp.NewToolResultError(errBlocked + err.Error()), nil
 	}
 
 	database, ok := h.DBRegistry.Get(dbName)
 	if !ok {
-		return mcp.NewToolResultError("unknown database: " + dbName), nil
+		return mcp.NewToolResultError(errNotFound + "unknown database: " + dbName), nil
 	}
 
 	var params []any
@@ -176,6 +193,9 @@ func (h *Handlers) DBQuery(ctx context.Context, req mcp.CallToolRequest) (*mcp.C
 		}
 	}
 
+	ctx, cancel := ctxWithTimeout(ctx, h.AppConfig.TimeoutDB)
+	defer cancel()
+
 	upper := strings.TrimSpace(strings.ToUpper(query))
 	var result *db.QueryResult
 	if isReadQuery(upper) {
@@ -184,7 +204,7 @@ func (h *Handlers) DBQuery(ctx context.Context, req mcp.CallToolRequest) (*mcp.C
 		result, err = database.Exec(ctx, query, params...)
 	}
 	if err != nil {
-		return mcp.NewToolResultError("query execution failed"), nil
+		return mcp.NewToolResultError(errExec + "query execution failed"), nil
 	}
 
 	return jsonResult(result)
@@ -198,7 +218,7 @@ func (h *Handlers) DBListTables(ctx context.Context, req mcp.CallToolRequest) (*
 
 	database, ok := h.DBRegistry.Get(dbName)
 	if !ok {
-		return mcp.NewToolResultError("unknown database: " + dbName), nil
+		return mcp.NewToolResultError(errNotFound + "unknown database: " + dbName), nil
 	}
 
 	tables, err := database.ListTables()
@@ -225,7 +245,7 @@ func (h *Handlers) DBDescribe(ctx context.Context, req mcp.CallToolRequest) (*mc
 
 	database, ok := h.DBRegistry.Get(dbName)
 	if !ok {
-		return mcp.NewToolResultError("unknown database: " + dbName), nil
+		return mcp.NewToolResultError(errNotFound + "unknown database: " + dbName), nil
 	}
 
 	columns, err := database.DescribeTable(table)
@@ -255,7 +275,7 @@ func (h *Handlers) MongoFind(ctx context.Context, req mcp.CallToolRequest) (*mcp
 
 	mdb, ok := h.MongoRegistry.Get(dbName)
 	if !ok {
-		return mcp.NewToolResultError("unknown MongoDB: " + dbName), nil
+		return mcp.NewToolResultError(errNotFound + "unknown MongoDB: " + dbName), nil
 	}
 
 	args := req.GetArguments()
@@ -267,7 +287,7 @@ func (h *Handlers) MongoFind(ctx context.Context, req mcp.CallToolRequest) (*mcp
 	// Security gate
 	if err := validateMongoFilter(filter); err != nil {
 		h.AuditLog.LogBlocked("mongo_find", err.Error())
-		return mcp.NewToolResultError("blocked: " + err.Error()), nil
+		return mcp.NewToolResultError(errBlocked + err.Error()), nil
 	}
 
 	limit := int64(20)
@@ -277,7 +297,7 @@ func (h *Handlers) MongoFind(ctx context.Context, req mcp.CallToolRequest) (*mcp
 
 	result, err := mdb.Find(ctx, collection, filter, limit)
 	if err != nil {
-		return mcp.NewToolResultError("query execution failed"), nil
+		return mcp.NewToolResultError(errExec + "query execution failed"), nil
 	}
 
 	return jsonResult(result)
@@ -291,7 +311,7 @@ func (h *Handlers) MongoListCollections(ctx context.Context, req mcp.CallToolReq
 
 	mdb, ok := h.MongoRegistry.Get(dbName)
 	if !ok {
-		return mcp.NewToolResultError("unknown MongoDB: " + dbName), nil
+		return mcp.NewToolResultError(errNotFound + "unknown MongoDB: " + dbName), nil
 	}
 
 	cols, err := mdb.ListCollections(ctx)
@@ -321,12 +341,12 @@ func (h *Handlers) RedisExec(ctx context.Context, req mcp.CallToolRequest) (*mcp
 	// Security gate
 	if err := validateRedisCommand(command); err != nil {
 		h.AuditLog.LogBlocked("redis_exec", err.Error())
-		return mcp.NewToolResultError("blocked: " + err.Error()), nil
+		return mcp.NewToolResultError(errBlocked + err.Error()), nil
 	}
 
 	rdb, ok := h.RedisRegistry.Get(dbName)
 	if !ok {
-		return mcp.NewToolResultError("unknown Redis: " + dbName), nil
+		return mcp.NewToolResultError(errNotFound + "unknown Redis: " + dbName), nil
 	}
 
 	var args []any
@@ -338,7 +358,7 @@ func (h *Handlers) RedisExec(ctx context.Context, req mcp.CallToolRequest) (*mcp
 
 	result, err := rdb.Do(ctx, command, args...)
 	if err != nil {
-		return mcp.NewToolResultError("command execution failed"), nil
+		return mcp.NewToolResultError(errExec + "command execution failed"), nil
 	}
 
 	return jsonResult(result)
@@ -352,7 +372,7 @@ func (h *Handlers) RedisKeys(ctx context.Context, req mcp.CallToolRequest) (*mcp
 
 	rdb, ok := h.RedisRegistry.Get(dbName)
 	if !ok {
-		return mcp.NewToolResultError("unknown Redis: " + dbName), nil
+		return mcp.NewToolResultError(errNotFound + "unknown Redis: " + dbName), nil
 	}
 
 	pattern := "user:*" // safe default instead of "*"
@@ -418,7 +438,7 @@ func (h *Handlers) HTTPRequest(ctx context.Context, req mcp.CallToolRequest) (*m
 
 	resp, err := h.APIRegistry.Do(ctx, apiName, proxyReq)
 	if err != nil {
-		return mcp.NewToolResultError("request failed"), nil
+		return mcp.NewToolResultError(errExec + "request failed"), nil
 	}
 
 	return jsonResult(resp)

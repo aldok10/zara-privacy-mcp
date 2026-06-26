@@ -324,8 +324,12 @@ func (d *DB) driverDialect() string {
 func (d *DB) Query(ctx context.Context, query string, args ...any) (*QueryResult, error) {
 	start := time.Now()
 
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
+	// Use parent context deadline if set, otherwise default 30s
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+	}
 
 	rows, err := d.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -390,8 +394,11 @@ func (d *DB) Query(ctx context.Context, query string, args ...any) (*QueryResult
 func (d *DB) Exec(ctx context.Context, query string, args ...any) (*QueryResult, error) {
 	start := time.Now()
 
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+	}
 
 	result, err := d.db.ExecContext(ctx, query, args...)
 	if err != nil {
