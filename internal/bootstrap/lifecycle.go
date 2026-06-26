@@ -27,6 +27,7 @@ type Params struct {
 	DBRegistry    *db.Registry
 	MongoRegistry *db.MongoRegistry
 	RedisRegistry *db.RedisRegistry
+	Detectors     detectors
 }
 
 // Invoke wires lifecycle hooks.
@@ -36,9 +37,43 @@ func Invoke(p Params) {
 	// Context for background goroutines (cancelled on shutdown)
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// Hot-reload config on SIGHUP
+	// Hot-reload config on SIGHUP — reconnect services
 	config.WatchReload(ctx, logger, func(newCfg *config.Config) {
-		logger.Info("config reloaded")
+		logger.Info("config reloaded, reconnecting services")
+
+		// Reconnect SQL databases
+		p.DBRegistry.CloseAll()
+		for _, dbc := range newCfg.Databases {
+			if err := p.DBRegistry.Add(db.Config{
+				Name: dbc.Name, Driver: dbc.Driver, DSN: dbc.DSN,
+				MaxConns: dbc.MaxConns, MaxIdleConns: dbc.MaxIdleConns,
+			}, p.Detectors.Secret, p.Detectors.PII); err != nil {
+				logger.Warn("reload: failed to reconnect DB", "name", dbc.Name, "error", err)
+			}
+		}
+
+		// Reconnect Redis
+		p.RedisRegistry.CloseAll()
+		for _, rc := range newCfg.RedisDBs {
+			if err := p.RedisRegistry.Add(db.RedisConfig{
+				Name: rc.Name, Addr: rc.Addr, Username: rc.Username,
+				Password: rc.Password, DB: rc.DB, TLS: rc.TLS,
+			}, p.Detectors.Secret, p.Detectors.PII); err != nil {
+				logger.Warn("reload: failed to reconnect Redis", "name", rc.Name, "error", err)
+			}
+		}
+
+		// Reconnect MongoDB
+		p.MongoRegistry.CloseAll()
+		for _, mc := range newCfg.MongoDBs {
+			if err := p.MongoRegistry.Add(db.MongoConfig{
+				Name: mc.Name, URI: mc.URI, Database: mc.Database,
+			}, p.Detectors.Secret, p.Detectors.PII); err != nil {
+				logger.Warn("reload: failed to reconnect MongoDB", "name", mc.Name, "error", err)
+			}
+		}
+
+		logger.Info("services reconnected")
 	})
 
 	p.Lifecycle.Append(fx.Hook{
