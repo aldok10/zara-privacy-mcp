@@ -2,9 +2,12 @@ package bootstrap
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	mcpserver "github.com/mark3labs/mcp-go/server"
 	"go.uber.org/fx"
@@ -22,6 +25,7 @@ type Params struct {
 	Lifecycle     fx.Lifecycle
 	Shutdowner    fx.Shutdowner
 	Logger        *slog.Logger
+	Config        *config.Config
 	Server        *transport.MCPServer
 	Store         *store.MappingStore
 	DBRegistry    *db.Registry
@@ -78,14 +82,14 @@ func Invoke(p Params) {
 
 	p.Lifecycle.Append(fx.Hook{
 		OnStart: func(_ context.Context) error {
-			logger.Info("Zara Privacy MCP starting", "tools", 21)
-			go func() {
-				if err := mcpserver.ServeStdio(p.Server.Server()); err != nil {
-					logger.Info("server stopped", "reason", err.Error())
-				}
-				// Stdio ended (EOF) — trigger app shutdown
-				p.Shutdowner.Shutdown()
-			}()
+			logger.Info("Zara Privacy MCP starting", "tools", 21, "transport", p.Config.Transport)
+
+			switch p.Config.Transport {
+			case "http", "streamable-http":
+				go startHTTPTransport(p, logger)
+			default:
+				go startStdioTransport(p, logger)
+			}
 			return nil
 		},
 		OnStop: func(_ context.Context) error {
@@ -98,6 +102,43 @@ func Invoke(p Params) {
 			return nil
 		},
 	})
+}
+
+func startStdioTransport(p Params, logger *slog.Logger) {
+	if err := mcpserver.ServeStdio(p.Server.Server()); err != nil {
+		logger.Info("stdio server stopped", "reason", err.Error())
+	}
+	p.Shutdowner.Shutdown()
+}
+
+func startHTTPTransport(p Params, logger *slog.Logger) {
+	addr := fmt.Sprintf("%s:%s", p.Config.Host, p.Config.Port)
+
+	httpServer := mcpserver.NewStreamableHTTPServer(p.Server.Server())
+
+	mux := http.NewServeMux()
+	mux.Handle("/mcp", httpServer)
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ok"}`))
+	})
+	mux.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ready"}`))
+	})
+
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	logger.Info("HTTP transport listening", "addr", addr)
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		logger.Error("HTTP server error", "error", err)
+	}
+	p.Shutdowner.Shutdown()
 }
 
 func expandHome(path string) string {
