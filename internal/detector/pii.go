@@ -163,12 +163,30 @@ func (d *PIIDetector) ScanWithContext(text string, locales ...string) []Finding 
 	return filtered
 }
 
-// isFalsePositive checks if a finding is likely a false positive.
+// isFalsePositive checks if a finding is likely a false positive based on surrounding context.
 func isFalsePositive(f Finding, text string) bool {
 	// Get context around the finding
-	start := max(f.Position-20, 0)
-	end := min(f.Position+f.Length+20, len(text))
+	start := max(f.Position-30, 0)
+	end := min(f.Position+f.Length+30, len(text))
 	ctx := strings.ToLower(text[start:end])
+
+	// Code/JSON context indicators — numbers in these contexts are rarely PII
+	codeIndicators := []string{
+		"\":", "': ", "= ", "==", "!=", "<=", ">=", "//", "/*", "*/",
+		"func ", "var ", "const ", "return ", "import ", "package ",
+		"http://", "https://", "localhost:", "port", "0x",
+		"version", "v1.", "v2.", "timeout", "retry", "limit", "offset",
+		"width", "height", "size", "count", "index", "id\":",
+	}
+
+	for _, indicator := range codeIndicators {
+		if strings.Contains(ctx, indicator) {
+			// Only suppress low/mid risk numeric patterns in code context
+			if f.Risk <= RiskMid && isNumeric(f.Value) {
+				return true
+			}
+		}
+	}
 
 	// Check if it looks like a year (4 digits, 1900-2099)
 	if f.Type == "NIK (KTP)" || f.Type == "SIM Indonesia" {
@@ -179,18 +197,38 @@ func isFalsePositive(f Finding, text string) bool {
 
 	// Postal code false positives
 	if strings.Contains(f.Type, "Postal Code") {
-		// Check if preceded by context suggesting non-PII usage
 		nonPII := []string{"port", "zip", "postal", "kode pos", "kode"}
 		for _, keyword := range nonPII {
 			if strings.Contains(ctx, keyword) {
 				return false // Actual postal code
 			}
 		}
-		// Short numbers are usually not postal codes
 		if len(f.Value) < 5 {
 			return true
 		}
 	}
 
+	// Phone in JSON/structured data is likely not a real phone
+	if strings.Contains(f.Type, "Phone") && f.Risk <= RiskMid {
+		if strings.Contains(ctx, "\"") && strings.Contains(ctx, ":") {
+			// Looks like JSON key:value — higher chance of false positive for short numbers
+			if len(f.Value) < 10 {
+				return true
+			}
+		}
+	}
+
 	return false
+}
+
+// isNumeric returns true if the string contains only digits and common separators.
+func isNumeric(s string) bool {
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			if r != '+' && r != '-' && r != '.' && r != ' ' {
+				return false
+			}
+		}
+	}
+	return true
 }
