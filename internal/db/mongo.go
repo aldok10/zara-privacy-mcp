@@ -127,10 +127,10 @@ func (r *MongoRegistry) CloseAll() {
 // ─── Query Operations ───────────────────────────────────────────────────────
 
 // Find runs a MongoDB find query and returns masked results.
-func (m *MongoDB) Find(collection string, filter bson.M, limit int64) (*MongoResult, error) {
+func (m *MongoDB) Find(ctx context.Context, collection string, filter bson.M, limit int64) (*MongoResult, error) {
 	start := time.Now()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	opts := options.Find()
@@ -198,8 +198,7 @@ func (m *MongoDB) RunCommand(command bson.M) (*MongoResult, error) {
 }
 
 // ListCollections returns all collection names in the database.
-func (m *MongoDB) ListCollections() ([]string, error) {
-	ctx := context.Background()
+func (m *MongoDB) ListCollections(ctx context.Context) ([]string, error) {
 	cols, err := m.db.ListCollectionNames(ctx, bson.M{})
 	if err != nil {
 		return nil, err

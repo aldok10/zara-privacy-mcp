@@ -95,7 +95,7 @@ func provideRedisRegistry(cfg *config.Config, d detectors) *db.RedisRegistry {
 	for _, rc := range cfg.RedisDBs {
 		reg.Add(db.RedisConfig{
 			Name: rc.Name, Addr: rc.Addr, Username: rc.Username,
-			Password: rc.Password, DB: rc.DB,
+			Password: rc.Password, DB: rc.DB, TLS: rc.TLS,
 		}, d.Secret, d.PII)
 	}
 	return reg
@@ -166,6 +166,7 @@ func provideHandlers(
 	apiReg *httpproxy.Registry,
 	aiReg *ai.Registry,
 	router *ai.Router,
+	auditLog *audit.Logger,
 	cfg *config.Config,
 ) *tools.Handlers {
 	return &tools.Handlers{
@@ -179,6 +180,7 @@ func provideHandlers(
 		APIRegistry:    apiReg,
 		AIRegistry:     aiReg,
 		AIRouter:       router,
+		AuditLog:       auditLog,
 		AppConfig:      cfg,
 		DefaultLocales: cfg.DefaultLocales,
 	}

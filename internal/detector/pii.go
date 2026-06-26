@@ -23,7 +23,7 @@ func (d *PIIDetector) registerBuiltin() {
 	d.patterns = []PIIPattern{
 		// Global
 		{Name: "Email", Regex: `[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}`, Risk: RiskMid, Locales: []string{"global"}},
-		{Name: "Phone (Global)", Regex: `\+?[1-9][0-9]{7,15}`, Risk: RiskMid, Locales: []string{"global"}},
+		{Name: "Phone (Global)", Regex: `\b\+[1-9][0-9]{7,14}\b`, Risk: RiskMid, Locales: []string{"global"}},
 		{Name: "Credit Card", Regex: `\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13}|6(?:011|5[0-9]{2})[0-9]{12})\b`, Risk: RiskHigh, Locales: []string{"global"}},
 		{Name: "IP Address", Regex: `\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b`, Risk: RiskLow, Locales: []string{"global"}},
 

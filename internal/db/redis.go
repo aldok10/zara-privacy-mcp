@@ -3,6 +3,7 @@ package db
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"sync"
 	"time"
@@ -19,6 +20,7 @@ type RedisConfig struct {
 	Username        string
 	Password        string
 	DB              int
+	TLS             bool          // enable TLS (for managed Redis services)
 	PoolSize        int           // max connections in pool (default: 10)
 	MinIdleConns    int           // min idle connections kept open (default: 2)
 	ConnMaxIdleTime time.Duration // close idle connections after this (default: 5m)
@@ -78,7 +80,7 @@ func (r *RedisRegistry) Add(cfg RedisConfig, secretDet *detector.SecretDetector,
 		maxIdleTime = 5 * time.Minute
 	}
 
-	client := redis.NewClient(&redis.Options{
+	opts := &redis.Options{
 		Addr:            cfg.Addr,
 		Username:        cfg.Username,
 		Password:        cfg.Password,
@@ -86,7 +88,12 @@ func (r *RedisRegistry) Add(cfg RedisConfig, secretDet *detector.SecretDetector,
 		PoolSize:        poolSize,
 		MinIdleConns:    minIdle,
 		ConnMaxIdleTime: maxIdleTime,
-	})
+	}
+	if cfg.TLS {
+		opts.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+	}
+
+	client := redis.NewClient(opts)
 
 	ctx := context.Background()
 	if err := client.Ping(ctx).Err(); err != nil {
@@ -134,10 +141,9 @@ func (r *RedisRegistry) CloseAll() {
 // ─── Commands ───────────────────────────────────────────────────────────────
 
 // Do executes an arbitrary Redis command and returns the result with masking.
-func (r *RedisDB) Do(command string, args ...any) (*RedisResult, error) {
+func (r *RedisDB) Do(ctx context.Context, command string, args ...any) (*RedisResult, error) {
 	start := time.Now()
 
-	ctx := context.Background()
 	cmd := r.client.Do(ctx, append([]any{command}, args...)...)
 	if err := cmd.Err(); err != nil {
 		return nil, fmt.Errorf("redis %s: %w", command, err)
@@ -155,8 +161,7 @@ func (r *RedisDB) Do(command string, args ...any) (*RedisResult, error) {
 }
 
 // Keys returns all keys matching a pattern.
-func (r *RedisDB) Keys(pattern string) ([]string, error) {
-	ctx := context.Background()
+func (r *RedisDB) Keys(ctx context.Context, pattern string) ([]string, error) {
 	return r.client.Keys(ctx, pattern).Result()
 }
 

@@ -10,6 +10,7 @@ import (
 
 	"github.com/aldok10/zara-privacy-mcp/config"
 	"github.com/aldok10/zara-privacy-mcp/internal/ai"
+	"github.com/aldok10/zara-privacy-mcp/internal/audit"
 	"github.com/aldok10/zara-privacy-mcp/internal/classify"
 	"github.com/aldok10/zara-privacy-mcp/internal/compress"
 	"github.com/aldok10/zara-privacy-mcp/internal/db"
@@ -32,6 +33,7 @@ type Handlers struct {
 	APIRegistry    *httpproxy.Registry
 	AIRegistry     *ai.Registry
 	AIRouter       *ai.Router // optional: fallback routing
+	AuditLog       *audit.Logger
 	AppConfig      *config.Config
 	DefaultLocales []string
 	MaxTextSize    int
@@ -158,6 +160,7 @@ func (h *Handlers) DBQuery(ctx context.Context, req mcp.CallToolRequest) (*mcp.C
 
 	// Security gate
 	if err := validateSQL(query); err != nil {
+		h.AuditLog.LogBlocked("db_query", err.Error())
 		return mcp.NewToolResultError("blocked: " + err.Error()), nil
 	}
 
@@ -176,9 +179,9 @@ func (h *Handlers) DBQuery(ctx context.Context, req mcp.CallToolRequest) (*mcp.C
 	upper := strings.TrimSpace(strings.ToUpper(query))
 	var result *db.QueryResult
 	if isReadQuery(upper) {
-		result, err = database.Query(query, params...)
+		result, err = database.Query(ctx, query, params...)
 	} else {
-		result, err = database.Exec(query, params...)
+		result, err = database.Exec(ctx, query, params...)
 	}
 	if err != nil {
 		return mcp.NewToolResultError("query execution failed"), nil
@@ -263,6 +266,7 @@ func (h *Handlers) MongoFind(ctx context.Context, req mcp.CallToolRequest) (*mcp
 
 	// Security gate
 	if err := validateMongoFilter(filter); err != nil {
+		h.AuditLog.LogBlocked("mongo_find", err.Error())
 		return mcp.NewToolResultError("blocked: " + err.Error()), nil
 	}
 
@@ -271,7 +275,7 @@ func (h *Handlers) MongoFind(ctx context.Context, req mcp.CallToolRequest) (*mcp
 		limit = int64(l)
 	}
 
-	result, err := mdb.Find(collection, filter, limit)
+	result, err := mdb.Find(ctx, collection, filter, limit)
 	if err != nil {
 		return mcp.NewToolResultError("query execution failed"), nil
 	}
@@ -290,7 +294,7 @@ func (h *Handlers) MongoListCollections(ctx context.Context, req mcp.CallToolReq
 		return mcp.NewToolResultError("unknown MongoDB: " + dbName), nil
 	}
 
-	cols, err := mdb.ListCollections()
+	cols, err := mdb.ListCollections(ctx)
 	if err != nil {
 		return mcp.NewToolResultError("failed to list collections"), nil
 	}
@@ -316,6 +320,7 @@ func (h *Handlers) RedisExec(ctx context.Context, req mcp.CallToolRequest) (*mcp
 
 	// Security gate
 	if err := validateRedisCommand(command); err != nil {
+		h.AuditLog.LogBlocked("redis_exec", err.Error())
 		return mcp.NewToolResultError("blocked: " + err.Error()), nil
 	}
 
@@ -331,7 +336,7 @@ func (h *Handlers) RedisExec(ctx context.Context, req mcp.CallToolRequest) (*mcp
 		}
 	}
 
-	result, err := rdb.Do(command, args...)
+	result, err := rdb.Do(ctx, command, args...)
 	if err != nil {
 		return mcp.NewToolResultError("command execution failed"), nil
 	}
@@ -355,7 +360,7 @@ func (h *Handlers) RedisKeys(ctx context.Context, req mcp.CallToolRequest) (*mcp
 		pattern = p
 	}
 
-	keys, err := rdb.Keys(pattern)
+	keys, err := rdb.Keys(ctx, pattern)
 	if err != nil {
 		return mcp.NewToolResultError("failed to list keys"), nil
 	}
@@ -411,7 +416,7 @@ func (h *Handlers) HTTPRequest(ctx context.Context, req mcp.CallToolRequest) (*m
 		Timeout: timeout,
 	}
 
-	resp, err := h.APIRegistry.Do(apiName, proxyReq)
+	resp, err := h.APIRegistry.Do(ctx, apiName, proxyReq)
 	if err != nil {
 		return mcp.NewToolResultError("request failed"), nil
 	}
