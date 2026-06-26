@@ -33,14 +33,17 @@ type Params struct {
 func Invoke(p Params) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
+	// Context for background goroutines (cancelled on shutdown)
+	ctx, cancel := context.WithCancel(context.Background())
+
 	// Hot-reload config on SIGHUP
-	config.WatchReload(logger, func(newCfg *config.Config) {
+	config.WatchReload(ctx, logger, func(newCfg *config.Config) {
 		logger.Info("config reloaded")
 	})
 
 	p.Lifecycle.Append(fx.Hook{
-		OnStart: func(ctx context.Context) error {
-			logger.Info("Zara Privacy MCP starting", "tools", 20)
+		OnStart: func(_ context.Context) error {
+			logger.Info("Zara Privacy MCP starting", "tools", 21)
 			go func() {
 				if err := mcpserver.ServeStdio(p.Server.Server()); err != nil {
 					logger.Info("server stopped", "reason", err.Error())
@@ -50,8 +53,9 @@ func Invoke(p Params) {
 			}()
 			return nil
 		},
-		OnStop: func(ctx context.Context) error {
+		OnStop: func(_ context.Context) error {
 			logger.Info("shutting down...")
+			cancel() // stop background goroutines
 			p.Store.Close()
 			p.DBRegistry.CloseAll()
 			p.MongoRegistry.CloseAll()
@@ -63,7 +67,11 @@ func Invoke(p Params) {
 
 func expandHome(path string) string {
 	if len(path) > 0 && path[0] == '~' {
-		home, _ := os.UserHomeDir()
+		home, err := os.UserHomeDir()
+		if err != nil || home == "" {
+			// Fallback to temp dir if HOME unavailable (containers)
+			home = os.TempDir()
+		}
 		return filepath.Join(home, path[1:])
 	}
 	return path

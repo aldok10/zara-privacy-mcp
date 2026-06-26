@@ -90,15 +90,17 @@ func validateSQL(query string) error {
 	return nil
 }
 
+// Package-level compiled patterns for comment stripping.
+var (
+	reBlockComment = regexp.MustCompile(`/\*[\s\S]*?\*/`)
+	reLineComment  = regexp.MustCompile(`--[^\n]*`)
+)
+
 // stripSQLComments removes -- line comments and /* block comments */ from SQL.
 // This prevents attackers from hiding payloads inside comments.
 func stripSQLComments(query string) string {
-	// Remove block comments
-	re := regexp.MustCompile(`/\*[\s\S]*?\*/`)
-	query = re.ReplaceAllString(query, " ")
-	// Remove line comments
-	re2 := regexp.MustCompile(`--[^\n]*`)
-	query = re2.ReplaceAllString(query, " ")
+	query = reBlockComment.ReplaceAllString(query, " ")
+	query = reLineComment.ReplaceAllString(query, " ")
 	return query
 }
 

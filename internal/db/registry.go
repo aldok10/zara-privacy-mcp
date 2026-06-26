@@ -444,6 +444,9 @@ func (d *DB) ListTables() ([]string, error) {
 		}
 		tables = append(tables, name)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return tables, nil
 }
 
@@ -470,15 +473,15 @@ func (d *DB) DescribeTable(table string) ([]ColumnInfo, error) {
 }
 
 func (d *DB) describePostgres(table string) ([]ColumnInfo, error) {
-	query := fmt.Sprintf(`
+	query := `
 		SELECT column_name, data_type, is_nullable,
 			COALESCE(character_maximum_length::text, '') AS max_len,
 			COALESCE(column_default, '') AS col_default
 		FROM information_schema.columns
-		WHERE table_name = '%s'
-		ORDER BY ordinal_position`, table)
+		WHERE table_name = $1
+		ORDER BY ordinal_position`
 
-	rows, err := d.db.Query(query)
+	rows, err := d.db.Query(query, table)
 	if err != nil {
 		return nil, err
 	}
@@ -497,19 +500,22 @@ func (d *DB) describePostgres(table string) ([]ColumnInfo, error) {
 		ci.Default = defaultVal
 		cols = append(cols, ci)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return cols, nil
 }
 
 func (d *DB) describeMySQL(table string) ([]ColumnInfo, error) {
-	query := fmt.Sprintf(`
+	query := `
 		SELECT column_name, column_type, is_nullable,
 			COALESCE(column_default, '') AS col_default,
 			COALESCE(column_key, '') AS col_key
 		FROM information_schema.columns
-		WHERE table_schema = DATABASE() AND table_name = '%s'
-		ORDER BY ordinal_position`, table)
+		WHERE table_schema = DATABASE() AND table_name = ?
+		ORDER BY ordinal_position`
 
-	rows, err := d.db.Query(query)
+	rows, err := d.db.Query(query, table)
 	if err != nil {
 		return nil, err
 	}
@@ -527,19 +533,22 @@ func (d *DB) describeMySQL(table string) ([]ColumnInfo, error) {
 		}
 		cols = append(cols, ci)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return cols, nil
 }
 
 func (d *DB) describeSQLServer(table string) ([]ColumnInfo, error) {
-	query := fmt.Sprintf(`
+	query := `
 		SELECT column_name, data_type, is_nullable,
-			COALESCE(character_maximum_length::varchar, '') AS max_len,
+			COALESCE(CAST(character_maximum_length AS varchar), '') AS max_len,
 			COALESCE(column_default, '') AS col_default
 		FROM information_schema.columns
-		WHERE table_name = '%s'
-		ORDER BY ordinal_position`, table)
+		WHERE table_name = @p1
+		ORDER BY ordinal_position`
 
-	rows, err := d.db.Query(query)
+	rows, err := d.db.Query(query, table)
 	if err != nil {
 		return nil, err
 	}
@@ -558,10 +567,14 @@ func (d *DB) describeSQLServer(table string) ([]ColumnInfo, error) {
 		ci.Default = defaultVal
 		cols = append(cols, ci)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return cols, nil
 }
 
 func (d *DB) describeSQLite(table string) ([]ColumnInfo, error) {
+	// PRAGMA doesn't support parameterized queries; sanitizeName ensures safe input
 	query := fmt.Sprintf(`PRAGMA table_info('%s')`, table)
 	rows, err := d.db.Query(query)
 	if err != nil {
@@ -596,18 +609,21 @@ func (d *DB) describeSQLite(table string) ([]ColumnInfo, error) {
 		}
 		cols = append(cols, ci)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return cols, nil
 }
 
 func (d *DB) describeOracle(table string) ([]ColumnInfo, error) {
-	query := fmt.Sprintf(`
+	query := `
 		SELECT column_name, data_type, nullable,
 			COALESCE(data_default, '') AS col_default
 		FROM user_tab_columns
-		WHERE table_name = '%s'
-		ORDER BY column_id`, table)
+		WHERE table_name = :1
+		ORDER BY column_id`
 
-	rows, err := d.db.Query(query)
+	rows, err := d.db.Query(query, table)
 	if err != nil {
 		return nil, err
 	}
@@ -627,18 +643,21 @@ func (d *DB) describeOracle(table string) ([]ColumnInfo, error) {
 		}
 		cols = append(cols, ci)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return cols, nil
 }
 
 func (d *DB) describeClickHouse(table string) ([]ColumnInfo, error) {
-	query := fmt.Sprintf(`
+	query := `
 		SELECT name, type, is_nullable,
 			COALESCE(default_expression, '') AS col_default
 		FROM system.columns
-		WHERE database = currentDatabase() AND table = '%s'
-		ORDER BY position`, table)
+		WHERE database = currentDatabase() AND table = ?
+		ORDER BY position`
 
-	rows, err := d.db.Query(query)
+	rows, err := d.db.Query(query, table)
 	if err != nil {
 		return nil, err
 	}
@@ -656,6 +675,9 @@ func (d *DB) describeClickHouse(table string) ([]ColumnInfo, error) {
 			ci.Nullable = "YES"
 		}
 		cols = append(cols, ci)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return cols, nil
 }
