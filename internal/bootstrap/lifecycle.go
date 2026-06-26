@@ -82,7 +82,7 @@ func Invoke(p Params) {
 
 	p.Lifecycle.Append(fx.Hook{
 		OnStart: func(_ context.Context) error {
-			logger.Info("Zara Privacy MCP starting", "tools", 21, "transport", p.Config.Transport)
+			logger.Info("Zara Privacy MCP starting", "tools", 22, "transport", p.Config.Transport)
 
 			switch p.Config.Transport {
 			case "http", "streamable-http":

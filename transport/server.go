@@ -231,6 +231,16 @@ func registerAITools(s *server.MCPServer, h *tools.Handlers) {
 	)
 
 	s.AddTool(
+		mcp.NewTool("ai_chat_stream",
+			mcp.WithDescription("Send a streaming chat message to an AI provider. Accumulates the full response with per-chunk timeout for stall detection. Message is redacted before sending, response unredacted after."),
+			mcp.WithString("provider", mcp.Required(), mcp.Description("AI provider name")),
+			mcp.WithString("model", mcp.Required(), mcp.Description("Model name")),
+			mcp.WithArray("messages", mcp.Required(), mcp.Description("Chat messages [{role, content}]")),
+		),
+		h.AIChatStream,
+	)
+
+	s.AddTool(
 		mcp.NewTool("ai_list_providers",
 			mcp.WithDescription("List all configured AI providers and their available models."),
 		),

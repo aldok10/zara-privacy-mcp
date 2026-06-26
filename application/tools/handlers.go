@@ -498,6 +498,44 @@ func (h *Handlers) AIChat(ctx context.Context, req mcp.CallToolRequest) (*mcp.Ca
 	return jsonResult(response)
 }
 
+func (h *Handlers) AIChatStream(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	providerName, err := req.RequireString("provider")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	model, err := req.RequireString("model")
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	args := req.GetArguments()
+	messagesRaw, ok := args["messages"]
+	if !ok {
+		return mcp.NewToolResultError("messages is required"), nil
+	}
+
+	msgBytes, err := json.Marshal(messagesRaw)
+	if err != nil {
+		return mcp.NewToolResultError("invalid messages"), nil
+	}
+	var messages []ai.ChatMessage
+	if err := json.Unmarshal(msgBytes, &messages); err != nil {
+		return mcp.NewToolResultError("invalid messages format"), nil
+	}
+
+	ctx, cancel := ctxWithTimeout(ctx, h.AppConfig.TimeoutAI)
+	defer cancel()
+
+	response, err := h.AIRegistry.ChatStream(ctx, providerName, ai.ChatRequest{
+		Model: model, Messages: messages, Stream: true,
+	}, h.Engine)
+	if err != nil {
+		return mcp.NewToolResultError("AI streaming failed: " + err.Error()), nil
+	}
+
+	return jsonResult(response)
+}
+
 func (h *Handlers) AIListProviders(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	providers := h.AIRegistry.List()
 	details := make([]map[string]any, 0)
